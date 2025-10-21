@@ -2,22 +2,23 @@ library(lidR)
 library(RCSF)
 library(RMCC)
 library(gstat)
+library(sf)
 
 # Website: https://r-lidar.github.io/lidRbook/
 
 # 2. Initiate .las ####
 
-# Link to .las file
-Link <- "E:/Remote Sensing Media/6. September 2025/Point Cloud/SU Lourensford September 2025_point cloud_50cm.las"
+# Link to smaller 50cm/pixel .las file
+#Link <- "E:/Remote Sensing Media/6. September 2025/Point Cloud/SU Lourensford September 2025_point cloud_50cm.las"
 
 # Link to bigger .las file
-# Link <- "E:/Remote Sensing Media/6. September 2025/Point Cloud/SU Lourensford September 2025_point cloud-001.copc.laz"
+Link <- "E:/Remote Sensing Media/6. September 2025/Point Cloud/SU Lourensford September 2025_point cloud-001.copc.laz"
 
 # 2.1 Read .las file
-las <- readLAS(Link)
+#las <- readLAS(Link)
 
 # You can filter attributes out if needed
-# las <- readLAS(Link, select = "xyz")
+las <- readLAS(Link, select = "xyzi")
 
 # Check .las details
 print(las)
@@ -28,9 +29,15 @@ las_check(las)
 # How to clip a point cloud ####
 
 # Region of interest (ROI)
-roi <- clip_circle(nlas, x = -6990, y = -3766340, radius = 20)
+roi <- clip_circle(las, x = -6990, y = -3766340, radius = 10)
 plot(roi, bg = "white", size = 4)
 
+
+shape_file <- st_read("E:/Remote Sensing Media/1. QGIS Projects/Michelle/Michelle QGIS Project/1 September 2025/Plot 37.shp")
+
+clipped_las <- clip_rectangle(las, xleft = -6988.282, xright = -6984.501, ybottom=-3766353, ytop=-3766326)
+
+writeLAS(clipped_las, file.path("E:/Remote Sensing Media/6. September 2025/Point Cloud", 'clipped_file.las'), index = FALSE)
 
 # 3. Render .las ####
 
@@ -42,7 +49,6 @@ plot(las, bg = "lightblue", color = "RGB", size = 3)
 # 4. Ground Classification ####
 
 ## 4.1 Progressive Morphological Filter ####
-
 
 ws <- seq(3, 12, 3)
 th <- seq(0.1, 1.5, length.out = length(ws))
@@ -65,7 +71,7 @@ plot(las2, color = "Classification", size = 3, bg = "lightblue")
 ## 4.3 Multiscale Curvature Classification (MCC) ####
 # Preferred
 
-las3 <- classify_ground(las, mcc(1.5,0.3))
+las3 <- classify_ground(roi, mcc(1.5,0.3))
 plot(las3, color = "Classification", size = 3, bg = "lightblue") 
 
 
@@ -108,7 +114,7 @@ plot_dtm3d(dtm_kriging_1, bg = "white")
 
 # How to fix Z values
 # PREFFERED way to normalize heights. Don't las - dtm!
-nlas <- normalize_height(las1, tin())
+nlas <- normalize_height(las3, tin())
 hist(filter_ground(nlas)$Z, breaks = seq(-0.6, 0.6, 0.01), main = "", xlab = "Elevation")
 
 # Normalised Heat map
@@ -169,3 +175,25 @@ heights <- seq(0,4,1)
 ws <- f(heights)
 plot(heights, ws, type = "l", ylim = c(0,6))
 
+ttops <- locate_trees(las, lmf(f))
+
+plot(chm, col = height.colors(50))
+plot(sf::st_geometry(ttops), add = TRUE, pch = 3)
+
+# Segment point cloud
+
+algo1 <- dalponte2016(chm, ttops)
+algo2 <- li2012()
+las_algo1 <- segment_trees(nlas, algo1, attribute = "IDdalponte")
+las_algo2 <- segment_trees(nlas, algo2, attribute = "IDli")
+
+x <- plot(las_algo1, bg = "white", size = 4, color = "IDdalponte", colorPalette = pastel.colors(200))
+#> The argument 'coloPalette' is deprecated. Use 'pal' instead
+plot(las, add = x + c(100,0), bg = "white", size = 4, color = "IDli", colorPalette = pastel.colors(200))
+#> The argument 'coloPalette' is deprecated. Use 'pal' instead
+
+
+x <- plot(las_algo2, bg = "white", size = 4, color = "IDdalponte", colorPalette = pastel.colors(200))
+#> The argument 'coloPalette' is deprecated. Use 'pal' instead
+plot(las, add = x + c(100,0), bg = "white", size = 4, color = "IDli", colorPalette = pastel.colors(200))
+#> The argument 'coloPalette' is deprecated. Use 'pal' instead
