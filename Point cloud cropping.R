@@ -4,6 +4,12 @@ library(RMCC)
 library(gstat)
 library(sf)
 
+# Unified Parallel and Distributed Processing in R for Everyone 
+# – a library that facilitates parallel processing of point cloud data.
+library(future)
+
+install.packages("future")
+
 # Link to bigger .las file
 #Link <- "E:/Remote Sensing Media/6. September 2025/Point Cloud/SU Lourensford September 2025_point cloud-001.copc.laz"
 
@@ -14,21 +20,26 @@ library(sf)
 Link <- "E:/Remote Sensing Media/6. September 2025/Point Cloud/SU Lourensford September 2025_point cloud_50cm.las"
 
 # You can filter attributes out if needed
-las <- readLAS(Link, select = "xyzi")
+# las <- readLAS(Link, select = "xyzi")
+
+las <- readLAS(Link)
 
 # Check .las details
 print(las)
 
 # Region of interest (ROI)
-las <- clip_circle(las, x = -6990, y = -3766340, radius = 10)
+las <- clip_circle(las, x = -6990, y = -3766340, radius = 20)
 plot(las, bg = "white", size = 4)
 
 # How to clip a point cloud ####
 
 # # Find extent through plot boundaries
-# shape_file <- st_read("E:/Remote Sensing Media/1. QGIS Projects/Michelle/Michelle QGIS Project/1 September 2025/Plot 37.shp")
-# clipped_las <- clip_rectangle(las, xleft = -6988.282, xright = -6984.501, ybottom=-3766353, ytop=-3766326)
+shape_file <- st_read("E:/Remote Sensing Media/1. QGIS Projects/Michelle/Michelle QGIS Project/1 September 2025/Plot 38.shp")
+extent <- ext(shape_file)
+clipped_las <- clip_rectangle(las, xleft = extent[1], xright = extent[2], ybottom = extent[3], ytop = extent[4])
 # writeLAS(clipped_las, file.path("E:/Remote Sensing Media/6. September 2025/Point Cloud", 'clipped_Plot_37.las'), index = FALSE)
+las <- clipped_las
+
 
 ## 4.1 Progressive Morphological Filter (PMF) for ground classification ####
 ws <- seq(3, 12, 3)
@@ -66,7 +77,7 @@ plot(chm, col = col)
 fill.na <- function(x, i=5) { if (is.na(x)[i]) { return(mean(x, na.rm = TRUE)) } else { return(x[i]) }}
 w <- matrix(1, 3, 3)
 
-chm <- rasterize_canopy(nlas, res = 0.5, algorithm = p2r(subcircle = 0.15), pkg = "terra")
+chm <- rasterize_canopy(nlas, res = 0.25, algorithm = p2r(subcircle = 0.15), pkg = "terra")
 filled <- terra::focal(chm, w, fun = fill.na)
 smoothed <- terra::focal(chm, w, fun = mean, na.rm = TRUE)
 
@@ -79,11 +90,7 @@ plot(chms, col = col)
 ## 8.1 Individual Tree Detection (ITD) ####
 
 # Locate trees in a circle with a diameter of "ws" in meters
-ttops <- locate_trees(nlas, lmf(ws = 1))
-
-chm <- rasterize_canopy(nlas, res = 1, p2r(0.2, na.fill = tin()))
-plot(chm, col = height.colors(50))
-plot(sf::st_geometry(ttops), add = TRUE, pch = 3)
+ttops <- locate_trees(nlas, lmf(ws = 2, hmin = 0.2))
 
 # Tree detection results can also be visualized in 3D!
 x <- plot(nlas, bg = "white", size = 4)
@@ -91,13 +98,17 @@ add_treetops3d(x, ttops, radius = 0.1, fastTransparency = TRUE, alpha = 0.5)
 
 # Local Maximum Filter with variable windows size
 
-f <- function(x) {x * 0.2 + 0.2}
-heights <- seq(0,4,1)
-ws <- f(heights)
-plot(heights, ws, type = "l", ylim = c(0,6))
+# create Local Maximum Filter (lmf) function
+f <- function(z) {1 * z + 0.2}
 
-ttops <- locate_trees(nlas, lmf(f))
+MinimumTreeHeight <- 0.3
 
+lmf_algorithm <- lmf(ws = f, hmin = MinimumTreeHeight, shape = "circular")
+
+# Identify tree tops
+ttops <- locate_trees(las = nlas, algorithm = lmf_algorithm)
+
+# Tree detection results in 2D
 plot(chm, col = height.colors(50))
 plot(sf::st_geometry(ttops), add = TRUE, pch = 3)
 
