@@ -193,7 +193,6 @@ plot(las, add = x + c(100,0), bg = "white", size = 4, color = "IDli", colorPalet
 #> The argument 'coloPalette' is deprecated. Use 'pal' instead
 
 
-x <- plot(las_algo2, bg = "white", size = 4, color = "IDdalponte", colorPalette = pastel.colors(200))
-#> The argument 'coloPalette' is deprecated. Use 'pal' instead
-plot(las, add = x + c(100,0), bg = "white", size = 4, color = "IDli", colorPalette = pastel.colors(200))
-#> The argument 'coloPalette' is deprecated. Use 'pal' instead
+
+
+
