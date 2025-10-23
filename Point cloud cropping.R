@@ -14,12 +14,12 @@ library(future)
 #Link <- "E:/Remote Sensing Media/6. September 2025/Point Cloud/SU Lourensford September 2025_point cloud-001.copc.laz"
 
 # Link to smaller 50cm/pixel .las file
-# Link <- "E:/Remote Sensing Media/6. September 2025/Point Cloud/SU Lourensford September 2025_point cloud_50cm.las"
+Link <- "E:/Remote Sensing Media/6. September 2025/Point Cloud/SU Lourensford September 2025_point cloud_50cm.las"
 
 # Link to Clipped .las file
 Plot <- 37
 Folder <- "Clipped"
-# Folder <- "Clipped_50cm"
+Folder <- "Clipped_50cm"
 Link <- paste0("E:/Remote Sensing Media/0. R Projects/Point Cloud/",Folder,"/clipped_Plot_",Plot,".las")
 
 # You can filter attributes out if needed
@@ -41,11 +41,11 @@ plot(las, bg = "white", size = 4)
 
 # Find extent through plot boundaries
 
-# PlotNumber <- 38
-# shape_file <- st_read(paste0("E:/Remote Sensing Media/1. QGIS Projects/Michelle/Michelle QGIS Project/1 September 2025/Plot ",PlotNumber,".shp"))
-# extent <- ext(shape_file)
-# las <- clip_rectangle(las, xleft = extent[1], xright = extent[2], ybottom = extent[3], ytop = extent[4])
-# writeLAS(las, file.path("E:/Remote Sensing Media/0. R Projects/Point Cloud/Clipped_50cm", paste0("clipped_Plot_",PlotNumber,".las")), index = FALSE)
+PlotNumber <- 37
+shape_file <- st_read(paste0("E:/Remote Sensing Media/1. QGIS Projects/Michelle/Michelle QGIS Project/1 September 2025/Plot ",PlotNumber,".shp"))
+extent <- ext(shape_file)
+las <- clip_rectangle(las, xleft = extent[1], xright = extent[2], ybottom = extent[3], ytop = extent[4])
+writeLAS(las, file.path("E:/Remote Sensing Media/0. R Projects/Point Cloud/Clipped_50cm", paste0("clipped_Plot_",PlotNumber,".las")), index = FALSE)
 
 # 4. Ground classification ####
 
@@ -84,9 +84,9 @@ nlas <- normalize_height(las1, tin())
 plot(nlas, size = 4, bg = "white")
 
 
-# 7. Digital Surface Model (DSDM) and Canopy Height model (CHM) ####
+# 7. Digital Surface Model (DSM) and Canopy Height model (CHM) ####
 
-# Digital Surface Model (DSDM) and Canopy Height model (CHM)
+# Digital Surface Model (DSM) and Canopy Height model (CHM)
 chm <- rasterize_canopy(nlas, algorithm = p2r())
 col <- height.colors(25)
 plot(chm, col = col)
@@ -113,8 +113,6 @@ plot(chms, col = col)
 
 # 8.1 Individual Tree Detection (ITD)
 
-
-
 MinimumTreeHeight <- 0.5
 
 # Local Maximum Filter with variable windows size
@@ -136,15 +134,18 @@ x <- plot(nlas, bg = "white", size = 4)
 add_treetops3d(x, ttops, radius = 0.1, fastTransparency = TRUE, alpha = 1)
 
 # Individual Tree Segmentation (ITS)
-# 
+
 algo <- dalponte2016(chm, ttops)
 las_segmented <- segment_trees(nlas, algo) # segment point cloud
 plot(las_segmented, bg = "white", size = 4, color = "treeID") # visualize trees
 
 # 9. Tree metrics ####
 
-metrics <- crown_metrics(las_segmented, ~list(z_max = max(Z), z_mean = mean(Z))) # calculate tree metrics
-head(metrics)
+trees <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/QGIS Extracted data/1 September 2025/Plot 37.shp")
+tree_heights <- terra::extract(chm, trees, fun = max, na.rm = TRUE)
+
+
+
 
 
 
