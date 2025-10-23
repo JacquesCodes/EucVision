@@ -6,6 +6,10 @@ library(sf)
 
 # Website: https://r-lidar.github.io/lidRbook/
 
+################################################################################
+# DO NOT USE LAZ.!! ONLY USE LAS. IT IMPROVES PERFORMANCE X10!
+################################################################################
+
 # 2. Initiate .las ####
 
 # Link to smaller 50cm/pixel .las file
