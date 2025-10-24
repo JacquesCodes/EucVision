@@ -5,14 +5,14 @@ library(gstat)
 library(sf)
 library(tictoc)
 library(geometry)
+library(dplyr)
+library(future)
 
 ################################################################################
 # DO NOT USE LAZ.!! ONLY USE LAS. IT IMPROVES PERFORMANCE X10!
 ################################################################################
 
-# Unified Parallel and Distributed Processing in R for Everyone 
-# – a library that facilitates parallel processing of point cloud data.
-library(future)
+
 
 # 1. Link to .las file ####
 
@@ -23,10 +23,12 @@ Link <- "E:/Remote Sensing Media/6. September 2025/Point Cloud/SU Lourensford Se
 # Link <- "E:/Remote Sensing Media/6. September 2025/Point Cloud/SU Lourensford September 2025_point cloud_50cm.las"
 
 # Link to Clipped .las file
-# Plot <- 37
-# Folder <- "Clipped"
-# Folder <- "Clipped_50cm"
-# Link <- paste0("E:/Remote Sensing Media/0. R Projects/Point Cloud/",Folder,"/clipped_Plot_",Plot,".las")
+Plot <- 1
+Folder <- "1. Clipped"
+Link <- paste0("E:/Remote Sensing Media/0. R Projects/Point Cloud/",Folder,"/Plot ",Plot,".las")
+
+
+Link <- "E:/Remote Sensing Media/0. R Projects/Point Cloud/3. Normalised/Plot 37_classified_normalised.las"
 
 # You can filter attributes out if needed
 tic()
@@ -40,6 +42,7 @@ toc()
 
 # Check .las details
 print(las)
+las_check(las)
 
 # 3. How to clip a point cloud ####
 
@@ -117,14 +120,18 @@ toc()
 
 tic()
 # Rasterize canopy with interpolation
-chm <- rasterize_canopy(nlas, algorithm = p2r(0.2, na.fill = tin()))
-writeRaster(chm,"E:/Remote Sensing Media/0. R Projects/Point Cloud/Canopy Height Model/", paste0("Plot ",PlotNumber,".las"), index = FALSE, overwrite = TRUE)
+dsm <- rasterize_canopy(nlas, res = 0.01, algorithm = p2r(na.fill = tin()))
+# writeRaster(chm,"E:/Remote Sensing Media/0. R Projects/Point Cloud/Canopy Height Model/", paste0("Plot ",PlotNumber,".las"), index = FALSE, overwrite = TRUE)
 print("Rastierize canopy time:")
 toc()
 
-# plot(chm, col = col)
+
+# smoothed <- terra::focal(dsm, w, fun = mean, na.rm = TRUE)
+# plot(smoothed, col = col)
 
 # 7.4 Post-processing a CHM ####
+
+# subcircle ONLY NEEDED FOR LOW POINT DENSITY!
 
 # fill.na <- function(x, i=5) { if (is.na(x)[i]) { return(mean(x, na.rm = TRUE)) } else { return(x[i]) }}
 # w <- matrix(1, 3, 3)
@@ -173,7 +180,7 @@ toc()
 # trees <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/QGIS Extracted data/1 September 2025/Plot 37.shp")
 
 # Read in shape file
-trees <- st_read(paste0("C:\Users\jakev\Stellenbosch University\JacquesV B.Sc. skripsie M.Sc. project - Documents\Processed Data\EucVision\QGIS Extracted data\1 September 2025/Plot ",PlotNumber))
+trees <- st_read(paste0("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/QGIS Extracted data/1 September 2025/Plot ",PlotNumber,".shp"))
 
 # Ensure both have an ID column
 trees$ID <- 1:nrow(trees)
@@ -191,3 +198,34 @@ print("Finish Time:")
 toc()
 
 
+
+
+
+
+
+
+
+
+
+# Test zone ####
+# Testing different DSM/CHM algorithms and settings
+
+# 1.162803 cm / point on average
+dsm <- rasterize_canopy(las, res = 0.01, algorithm = p2r(na.fill = tin()))
+smoothed <- terra::focal(dsm, w, fun = mean, na.rm = TRUE)
+plot(smoothed, col = col)
+
+
+# Read in shape file
+trees <- st_read(paste0("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/QGIS Extracted data/1 September 2025/Plot ",PlotNumber,".shp"))
+
+# Ensure both have an ID column
+trees$ID <- 1:nrow(trees)
+
+# Calculate metrics
+tree_heights <- terra::extract(dsm, trees, fun = max, na.rm = TRUE)
+
+# Join results back using the ID
+trees_with_heights <- left_join(trees, st_drop_geometry(tree_heights), by = "ID")
+
+mean(trees_with_heights$Z)
