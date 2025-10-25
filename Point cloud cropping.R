@@ -23,7 +23,7 @@ Link <- "E:/Remote Sensing Media/6. September 2025/Point Cloud/SU Lourensford Se
 # Link <- "E:/Remote Sensing Media/6. September 2025/Point Cloud/SU Lourensford September 2025_point cloud_50cm.las"
 
 # Link to Clipped .las file
-Plot <- 1
+Plot <- 17
 Folder <- "1. Clipped"
 Link <- paste0("E:/Remote Sensing Media/0. R Projects/Point Cloud/",Folder,"/Plot ",Plot,".las")
 
@@ -76,8 +76,21 @@ ws <- seq(3, 12, 3)
 th <- seq(0.1, 1.5, length.out = length(ws))
 las1 <- classify_ground(las, algorithm = pmf(ws = ws, th = th))
 plot(las1, color = "Classification", size = 3, bg = "lightblue")
-print("Ground filtering time:")
+print("PMF Ground filtering time:")
 toc()
+
+# Always keep cloth_resolution 0.5
+# Keep class threshold below 0.01 otherwise it starts to exclude short trees
+
+tic()
+####### Winner Winner Chicken Dinner! ####
+las4 <- classify_ground(las, csf(sloop_smooth = TRUE, class_threshold = 0.01, cloth_resolution = 0.5, time_step = 1))
+plot(las4, color = "Classification", size = 3, bg = "lightblue")
+print("CSF Ground filtering time:")
+toc()
+
+
+
 
 # Multiscale Curvature Classification (MCC)
 # Preferred but takes longer
@@ -105,7 +118,7 @@ toc()
 
 # Normalised 
 tic()
-nlas <- normalize_height(las1, tin())
+nlas <- normalize_height(las4, tin())
 plot(nlas, size = 4, bg = "white")
 writeLAS(nlas, file.path("E:/Remote Sensing Media/0. R Projects/Point Cloud/Normalised Plots/", paste0("Plot ",PlotNumber,".las")), index = FALSE)
 print("Height normalisation time:")
@@ -120,13 +133,13 @@ toc()
 
 tic()
 # Rasterize canopy with interpolation
-dsm <- rasterize_canopy(nlas, res = 0.01, algorithm = p2r(na.fill = tin()))
+chm <- rasterize_canopy(nlas, res = 0.01, algorithm = p2r(na.fill = tin()))
 # writeRaster(chm,"E:/Remote Sensing Media/0. R Projects/Point Cloud/Canopy Height Model/", paste0("Plot ",PlotNumber,".las"), index = FALSE, overwrite = TRUE)
 print("Rastierize canopy time:")
 toc()
 
 
-# smoothed <- terra::focal(dsm, w, fun = mean, na.rm = TRUE)
+# smoothed <- terra::focal(chm, w, fun = mean, na.rm = TRUE)
 # plot(smoothed, col = col)
 
 # 7.4 Post-processing a CHM ####
@@ -180,7 +193,7 @@ toc()
 # trees <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/QGIS Extracted data/1 September 2025/Plot 37.shp")
 
 # Read in shape file
-trees <- st_read(paste0("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/QGIS Extracted data/1 September 2025/Plot ",PlotNumber,".shp"))
+trees <- st_read(paste0("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/QGIS Extracted data/1 September 2025/Plot ",Plot,".shp"))
 
 # Ensure both have an ID column
 trees$ID <- 1:nrow(trees)
@@ -217,7 +230,7 @@ plot(smoothed, col = col)
 
 
 # Read in shape file
-trees <- st_read(paste0("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/QGIS Extracted data/1 September 2025/Plot ",PlotNumber,".shp"))
+trees <- st_read(paste0("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/QGIS Extracted data/1 September 2025/Plot ",Plot,".shp"))
 
 # Ensure both have an ID column
 trees$ID <- 1:nrow(trees)
