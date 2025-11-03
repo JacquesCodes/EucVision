@@ -20,7 +20,12 @@ library(future)
 Link <- "E:/Remote Sensing Media/6. September 2025/Point Cloud/SU Lourensford September 2025_point cloud-001.las"
 
 # Link to smaller 50cm/pixel .las file
-# Link <- "E:/Remote Sensing Media/6. September 2025/Point Cloud/SU Lourensford September 2025_point cloud_50cm.las"
+Link <- "E:/Remote Sensing Media/6. September 2025/Point Cloud/SU Lourensford September 2025_point cloud_50cm.las"
+
+# Link to the March IAS .las
+Link <- "E:/Remote Sensing Media/4. March 2025/DJI Matrice 3TD/RGB/15m/M3E 15mAGL_pointcloud.laz"
+
+Link <- "E:/Remote Sensing Media/4. March 2025/DJI Matrice 3TD/Thermal/39m/M3TD 39mAGL_pointcloud.las"
 
 # Link to Clipped .las file
 Plot <- 17
@@ -31,14 +36,14 @@ Link <- paste0("E:/Remote Sensing Media/0. R Projects/Point Cloud/",Folder,"/Plo
 Link <- "E:/Remote Sensing Media/0. R Projects/Point Cloud/3. Normalised/Plot 37_classified_normalised.las"
 
 # You can filter attributes out if needed
-tic()
-las <- readLAS(Link, select = "xyzi")
-print("Las. read in time:")
-toc()
+# tic()
+# las <- readLAS(Link, select = "xyzi")
+# print("Las. read in time:")
+# toc()
 # 2. Read and check point cloud ####
 
 # Read .las file into memory
-# las <- readLAS(Link)
+las <- readLAS(Link)
 
 # Check .las details
 print(las)
