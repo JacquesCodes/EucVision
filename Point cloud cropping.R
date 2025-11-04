@@ -7,6 +7,8 @@ library(tictoc)
 library(geometry)
 library(dplyr)
 library(future)
+library(rgl)
+library(magick)
 
 ################################################################################
 # DO NOT USE LAZ.!! ONLY USE LAS. IT IMPROVES PERFORMANCE X10!
@@ -35,11 +37,20 @@ Link <- paste0("E:/Remote Sensing Media/0. R Projects/Point Cloud/",Folder,"/Plo
 
 Link <- "E:/Remote Sensing Media/0. R Projects/Point Cloud/3. Normalised/Plot 37_classified_normalised.las"
 
-# You can filter attributes out if needed
-# tic()
-# las <- readLAS(Link, select = "xyzi")
-# print("Las. read in time:")
-# toc()
+# You can filter attributes out if needed to decrease RAM usage by over 50%!
+tic()
+las <- readLAS(Link, select = "xyzRGB")
+print("Las. read in time:")
+toc()
+
+plot(las, bg = "white", color = "RGB", size = 3)
+
+# Create a GIF in the current working directory
+# Spin around the Z-axis for 10 seconds
+spin <- spin3d(axis = c(0, 0, 1), rpm = 6)
+movie3d(spin,dir = getwd(),duration = 10, movie = "my_rgl_animation.gif", type = "gif", clean = TRUE)
+
+
 # 2. Read and check point cloud ####
 
 # Read .las file into memory
@@ -66,11 +77,13 @@ tic()
   shape_file <- st_read(paste0("E:/Remote Sensing Media/1. QGIS Projects/Michelle/Michelle QGIS Project/1 September 2025/Plot ",PlotNumber,".shp"))
   extent <- ext(shape_file)
   las_clipped <- clip_rectangle(las, xleft = extent[1], xright = extent[2], ybottom = extent[3], ytop = extent[4])
-  writeLAS(las_clipped, file.path("E:/Remote Sensing Media/0. R Projects/Point Cloud/Clipped/", paste0("Plot ",PlotNumber,".las")), index = FALSE)
+  writeLAS(las_clipped, file.path("E:/Remote Sensing Media/0. R Projects/Point Cloud/Clipped", paste0("Plot ",PlotNumber,".las")), index = FALSE)
   
   print(paste0("Cropping done for plot ",PlotNumber))
 toc()
 }
+
+las <- las_clipped
 
 # 4. Ground classification ####
 
@@ -125,9 +138,11 @@ toc()
 tic()
 nlas <- normalize_height(las4, tin())
 plot(nlas, size = 4, bg = "white")
-writeLAS(nlas, file.path("E:/Remote Sensing Media/0. R Projects/Point Cloud/Normalised Plots/", paste0("Plot ",PlotNumber,".las")), index = FALSE)
+# writeLAS(nlas, file.path("E:/Remote Sensing Media/0. R Projects/Point Cloud/Normalised Plots/", paste0("Plot ",PlotNumber,".las")), index = FALSE)
 print("Height normalisation time:")
 toc()
+
+plot(nlas, size= 2, color = "RGB", bg = "white")
 
 # 7. Digital Surface Model (DSM) and Canopy Height model (CHM) ####
 
@@ -192,6 +207,46 @@ toc()
 # algo <- dalponte2016(chm, ttops)
 # las_segmented <- segment_trees(nlas, algo) # segment point cloud
 # plot(las_segmented, bg = "white", size = 4, color = "treeID") # visualize trees
+
+# 8.1 Individual Tree Detection (ITD)
+
+MinimumTreeHeight <- 0.8
+
+# Local Maximum Filter with variable windows size
+# f <- function(z) {1 * z + 0.5}
+# lmf_algorithm <- lmf(ws = f, hmin = MinimumTreeHeight, shape = "circular")
+
+# create Local Maximum Filter (lmf) function for the "ws" search
+lmf_algorithm <- lmf(ws = 2, hmin = MinimumTreeHeight, shape = "circular")
+
+# Locate trees in a circle with a diameter of "ws" in meters
+ttops <- locate_trees(las = chm, algorithm = lmf_algorithm)
+
+# Tree detection results in 2D
+plot(chm, col = height.colors(50))
+plot(sf::st_geometry(ttops), add = TRUE, pch = 3)
+
+
+
+
+# Tree detection results can also be visualized in 3D!
+x <- plot(nlas, bg = "white", color = "RGB", size = 2)
+add_treetops3d(x, ttops, radius = 0.15, fastTransparency = TRUE, alpha = 0.8)
+
+# --- Define spin motion ---
+spin <- spin3d(axis = c(0, 0, 1), rpm = 6)
+
+# Doesn't work if you make the plot fullscreen.
+# --- Save the animation ---
+movie3d(
+  movie = "Tree_Tops_animation",   # base name for output
+  dir = getwd(),                   # output directory
+  spin,                            # the animation function
+  duration = 10,                   # 10 seconds
+  fps = 25,                        # frames per second
+  clean = TRUE,                    # remove frames after combining
+  type = "gif"                     # try making a .gif directly
+)
 
 # 9. Tree metrics ####
 
