@@ -12,7 +12,7 @@ library(rgl)
 
 
 #Plot number
-Number <- 17
+Number <- 18
 
 las <- readLAS(paste0("E:/Remote Sensing Media/0. R Projects/Point Cloud/1. Clipped/Plot ",Number,".las"))
 las_classified <- readLAS(paste0("E:/Remote Sensing Media/0. R Projects/Point Cloud/2. Ground Classified/Plot ",Number, "_classified.las"))

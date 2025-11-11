@@ -18,6 +18,12 @@ library(magick)
 
 # 1. Link to .las file ####
 
+# Link October .las file
+# Top
+Link <- "E:/Remote Sensing Media/7. 30 October 2025/Point cloud/Lourensford_Top_30 October_group1_densified_point_cloud.las"
+# Bottom
+Link <- "E:/Remote Sensing Media/7. 30 October 2025/Point cloud/Lourensford_30 Ocotober_Bottom_group1_densified_point_cloud.las"
+
 # Link to bigger .las file
 Link <- "E:/Remote Sensing Media/6. September 2025/Point Cloud/SU Lourensford September 2025_point cloud-001.las"
 
@@ -82,6 +88,25 @@ tic()
   print(paste0("Cropping done for plot ",PlotNumber))
 toc()
 }
+
+tic()  
+# October Crop
+for (i in 22:75) {
+# for (i in 1:21) {
+
+  PlotNumber <- i
+  shape_file <- st_read(paste0("E:/Remote Sensing Media/1. QGIS Projects/1. Plot boundaries for cropping/Plots shape files/id_",PlotNumber,".shp"))
+  extent <- ext(shape_file)
+  las_clipped <- clip_rectangle(las, xleft = extent[1], xright = extent[2], ybottom = extent[3], ytop = extent[4])
+  writeLAS(las_clipped, file.path("E:/Remote Sensing Media/0. R Projects/2. 30 October 2025/1. Clipped/", paste0("Plot ",PlotNumber,".las")), index = FALSE)
+  
+  print(paste0("Cropping done for plot ",PlotNumber))
+
+}
+toc()
+
+
+
 
 las <- las_clipped
 
