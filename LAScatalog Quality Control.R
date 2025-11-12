@@ -12,12 +12,12 @@ library(rgl)
 
 
 #Plot number
-Number <- 18
+Number <- 14
 
-las <- readLAS(paste0("E:/Remote Sensing Media/0. R Projects/Point Cloud/1. Clipped/Plot ",Number,".las"))
-las_classified <- readLAS(paste0("E:/Remote Sensing Media/0. R Projects/Point Cloud/2. Ground Classified/Plot ",Number, "_classified.las"))
-las_normalised <- readLAS(paste0("E:/Remote Sensing Media/0. R Projects/Point Cloud/3. Normalised/Plot ",Number, "_classified_normalised.las"))
-las_chm <- rast(paste0("E:/Remote Sensing Media/0. R Projects/Point Cloud/4. Canopy Height Model/Plot ",Number, "_classified_normalised_chm.tif"))
+las <- readLAS(paste0("E:/Remote Sensing Media/0. R Projects/2. 30 October 2025/1. Clipped/Plot ",Number,".las"))
+las_classified <- readLAS(paste0("E:/Remote Sensing Media/0. R Projects/2. 30 October 2025/2. Ground Classified/Plot ",Number, "_classified.las"))
+las_normalised <- readLAS(paste0("E:/Remote Sensing Media/0. R Projects/2. 30 October 2025/3. Normalised/Plot ",Number, "_classified_normalised.las"))
+las_chm <- rast(paste0("E:/Remote Sensing Media/0. R Projects/2. 30 October 2025/4. Canopy Height Model/Plot ",Number, "_classified_normalised_chm.tif"))
 
 trees <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/QGIS Combined Output/All_Plots.shp")
 
@@ -31,15 +31,16 @@ tree_heights <- terra::extract(las_chm, PlotTrees, fun = max, na.rm = TRUE)
 trees_with_heights <- left_join(PlotTrees, st_drop_geometry(tree_heights), by = "ID")
 
 # Cropped las
-plot(las, size = 4, bg = "#F1F8F8")
+plot(las, size = 4, bg = "white")
+# plot(las, size = 1, color = "RGB", bg = "white")
 
 # Classified las
 las_check(las_classified)
 gnd <- filter_ground(las_classified)
-plot(gnd, size = 3, bg = "#F1F8F8")
+plot(gnd, size = 3, bg = "white")
 
 dtm_tin_0 <- rasterize_terrain(las_classified, res = 1, algorithm = tin())
-plot_dtm3d(dtm_tin_0, bg = "#F1F8F8") 
+plot_dtm3d(dtm_tin_0, bg = "white") 
 
 plot(las_normalised,bg = "white")
 

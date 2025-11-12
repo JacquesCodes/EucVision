@@ -35,8 +35,13 @@ Link <- "E:/Remote Sensing Media/4. March 2025/DJI Matrice 3TD/RGB/15m/M3E 15mAG
 
 Link <- "E:/Remote Sensing Media/4. March 2025/DJI Matrice 3TD/Thermal/39m/M3TD 39mAGL_pointcloud.las"
 
+
+Link <- "E:/Remote Sensing Media/0. R Projects/2. 30 October 2025/1. Clipped/Plot 18.las"
+  
+
+
 # Link to Clipped .las file
-Plot <- 17
+Plot <- 18
 Folder <- "1. Clipped"
 Link <- paste0("E:/Remote Sensing Media/0. R Projects/Point Cloud/",Folder,"/Plot ",Plot,".las")
 
