@@ -10,14 +10,15 @@ library(future)
 library(terra)
 library(rgl)
 
+setwd("E:/Remote Sensing Media/0. R Projects/1. 1 September 2025")
 
 #Plot number
-Number <- 14
+Number <- 37
 
-las <- readLAS(paste0("E:/Remote Sensing Media/0. R Projects/2. 30 October 2025/1. Clipped/Plot ",Number,".las"))
-las_classified <- readLAS(paste0("E:/Remote Sensing Media/0. R Projects/2. 30 October 2025/2. Ground Classified/Plot ",Number, "_classified.las"))
-las_normalised <- readLAS(paste0("E:/Remote Sensing Media/0. R Projects/2. 30 October 2025/3. Normalised/Plot ",Number, "_classified_normalised.las"))
-las_chm <- rast(paste0("E:/Remote Sensing Media/0. R Projects/2. 30 October 2025/4. Canopy Height Model/Plot ",Number, "_classified_normalised_chm.tif"))
+las <- readLAS(paste0(getwd(),"/1. Clipped/Plot_",Number,".las"))
+las_classified <- readLAS(paste0(getwd(),"/2. Ground Classified/Plot_",Number, "_classified.las"))
+las_normalised <- readLAS(paste0(getwd(),"/3. Normalised/Plot_",Number, "_classified_normalised.las"))
+las_chm <- rast(paste0(getwd(),"/4. Canopy Height Model/Plot_",Number, "_classified_normalised_chm.tif"))
 
 trees <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/QGIS Combined Output/All_Plots.shp")
 
@@ -35,7 +36,6 @@ plot(las, size = 4, bg = "white")
 # plot(las, size = 1, color = "RGB", bg = "white")
 
 # Classified las
-las_check(las_classified)
 gnd <- filter_ground(las_classified)
 plot(gnd, size = 3, bg = "white")
 
@@ -88,3 +88,27 @@ movie3d(
   type = "gif"                     # try making a .gif directly
 )
 
+
+# Testing csf cloth resolution = 1
+tic()
+las_classified_2 <- classify_ground(las, csf(sloop_smooth = TRUE, 
+                                             class_threshold = 0.01, 
+                                             cloth_resolution = 1,
+                                             rigidness = 1,
+                                             time_step = 0.65))
+
+plot(las_classified_2, color = "Classification", size = 3, bg = "lightblue")
+print("CSF Ground filtering time:")
+toc()
+
+# Classified las
+gnd <- filter_ground(las_classified_2)
+plot(gnd, size = 3, bg = "white")
+
+# Classified ground
+dtm_tin_0 <- rasterize_terrain(las_classified_2, res = 1, algorithm = tin())
+plot_dtm3d(dtm_tin_0, bg = "white") 
+
+# Normalised 
+norm <- normalize_height(las = las_classified_2, algorithm = tin())
+plot(norm, size = 1, color = "RGB", bg = "white")

@@ -24,6 +24,17 @@ Link <- "E:/Remote Sensing Media/7. 30 October 2025/Point cloud/Lourensford_Top_
 # Bottom
 Link <- "E:/Remote Sensing Media/7. 30 October 2025/Point cloud/Lourensford_30 Ocotober_Bottom_group1_densified_point_cloud.las"
 
+
+
+# Link November
+# Top
+Link <- "E:/Remote Sensing Media/8. 7 November 2025/Point cloud/Lourensford_7 November_Top_group1_densified_point_cloud.las"
+# Bottom
+Link <- "E:/Remote Sensing Media/8. 7 November 2025/Point cloud/Lourensford_7 November_Bottom_group1_densified_point_cloud.las"
+
+
+
+
 # Link to bigger .las file
 Link <- "E:/Remote Sensing Media/6. September 2025/Point Cloud/SU Lourensford September 2025_point cloud-001.las"
 
@@ -36,7 +47,7 @@ Link <- "E:/Remote Sensing Media/4. March 2025/DJI Matrice 3TD/RGB/15m/M3E 15mAG
 Link <- "E:/Remote Sensing Media/4. March 2025/DJI Matrice 3TD/Thermal/39m/M3TD 39mAGL_pointcloud.las"
 
 
-Link <- "E:/Remote Sensing Media/0. R Projects/2. 30 October 2025/1. Clipped/Plot 18.las"
+Link <- "E:/Remote Sensing Media/0. R Projects/2. 30 October 2025/1. Clipped/Plot 17.las"
   
 
 
@@ -96,8 +107,8 @@ toc()
 
 tic()  
 # October Crop
-for (i in 22:75) {
-# for (i in 1:21) {
+# for (i in 22:75) {
+for (i in 1:21) {
 
   PlotNumber <- i
   shape_file <- st_read(paste0("E:/Remote Sensing Media/1. QGIS Projects/1. Plot boundaries for cropping/Plots shape files/id_",PlotNumber,".shp"))
@@ -132,7 +143,7 @@ toc()
 
 tic()
 ####### Winner Winner Chicken Dinner! ####
-las4 <- classify_ground(las, csf(sloop_smooth = TRUE, class_threshold = 0.01, cloth_resolution = 0.5, time_step = 1))
+las4 <- classify_ground(las, csf(sloop_smooth = TRUE, class_threshold = 0.01, cloth_resolution = 1, time_step = 0.65))
 plot(las4, color = "Classification", size = 3, bg = "lightblue")
 print("CSF Ground filtering time:")
 toc()
