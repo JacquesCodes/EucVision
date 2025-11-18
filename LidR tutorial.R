@@ -6,9 +6,7 @@ library(sf)
 
 # Website: https://r-lidar.github.io/lidRbook/
 
-################################################################################
 # DO NOT USE LAZ.!! ONLY USE LAS. IT IMPROVES PERFORMANCE X10!
-################################################################################
 
 # 2. Initiate .las ####
 
@@ -42,6 +40,12 @@ shape_file <- st_read("E:/Remote Sensing Media/1. QGIS Projects/Michelle/Michell
 clipped_las <- clip_rectangle(las, xleft = -6988.282, xright = -6984.501, ybottom=-3766353, ytop=-3766326)
 
 writeLAS(clipped_las, file.path("E:/Remote Sensing Media/6. September 2025/Point Cloud", 'clipped_file.las'), index = FALSE)
+
+# How to reproject a point cloud ####
+
+las <- readLAS("E:/Remote Sensing Media/03. Feb 2025/03. Point clouds/feb25ULS.las")
+reprojected_las <- st_transform(las, "ESRI:102562")
+writeLAS(reprojected_las, "E:/Remote Sensing Media/03. Feb 2025/03. Point clouds/reprojected_pointcloud.las")
 
 # 3. Render .las ####
 

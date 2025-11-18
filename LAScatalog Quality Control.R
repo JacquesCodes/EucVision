@@ -10,15 +10,16 @@ library(future)
 library(terra)
 library(rgl)
 
-setwd("E:/Remote Sensing Media/0. R Projects/1. 1 September 2025")
+# My path to the remote sensing dataset
+myPath <- "E:/Remote Sensing Media/03. Feb 2025/"
 
 #Plot number
-Number <- 37
+Number <- 38
 
-las <- readLAS(paste0(getwd(),"/1. Clipped/Plot_",Number,".las"))
-las_classified <- readLAS(paste0(getwd(),"/2. Ground Classified/Plot_",Number, "_classified.las"))
-las_normalised <- readLAS(paste0(getwd(),"/3. Normalised/Plot_",Number, "_classified_normalised.las"))
-las_chm <- rast(paste0(getwd(),"/4. Canopy Height Model/Plot_",Number, "_classified_normalised_chm.tif"))
+las <- readLAS(paste0(myPath,"04. Clipped/Plot_",Number,".las"))
+las_classified <- readLAS(paste0(myPath,"05. Ground classified/Plot_",Number, "_classified.las"))
+las_normalised <- readLAS(paste0(myPath,"06. Normalised/Plot_",Number, "_classified_normalised.las"))
+las_chm <- rast(paste0(myPath,"07. Canopy Height Model/Plot_",Number, "_classified_normalised_chm.tif"))
 
 trees <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/QGIS Combined Output/All_Plots.shp")
 

@@ -7,11 +7,12 @@ library(tictoc)
 library(geometry)
 library(dplyr)
 library(future)
+library(sp)
 
 # Read in all point clouds and shape files ####
 
 # My path to the remote sensing dataset
-myPath <- "E:/Remote Sensing Media/08. 30 October & 7 November 2025/"
+myPath <- "E:/Remote Sensing Media/03. Feb 2025/"
 
 # Read in point clouds into a catalog (ctg)
 ctg <- readLAScatalog(paste0(myPath,"03. Point clouds"))
