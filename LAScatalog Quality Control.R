@@ -17,12 +17,12 @@ myPath <- "E:/Remote Sensing Media/08. 30 October & 7 November 2025/"
 #Plot number
 Number <- 17
 
-las <- readLAS(paste0(myPath,"04. Clipped/Plot_",Number,".las"))
-las_classified <- readLAS(paste0(myPath,"05. Ground classified/Plot_",Number, "_classified.las"))
-las_normalised <- readLAS(paste0(myPath,"06. Normalised/Plot_",Number, "_classified_normalised.las"))
-las_chm <- rast(paste0(myPath,"07. Canopy Height Model/Plot_",Number, "_classified_normalised_chm.tif"))
+las <- readLAS(paste0(myPath,"04. Point clouds clipped/Plot_",Number,".las"))
+las_classified <- readLAS(paste0(myPath,"05. Point clouds ground classified/Plot_",Number, "_classified.las"))
+las_normalised <- readLAS(paste0(myPath,"06. Point clouds normalised/Plot_",Number, "_classified_normalised.las"))
+las_chm <- rast(paste0(myPath,"07. Canopy Height Models/Plot_",Number, "_classified_normalised_chm.tif"))
 
-trees <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/QGIS Combined Output/All_Plots.shp")
+trees <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/QGIS Combined Output/1 September 2025/All_Plots.shp")
 
 PlotTrees <- trees[trees$Plot == paste0("Plot ",Number),]
 
@@ -34,8 +34,8 @@ tree_heights <- terra::extract(las_chm, PlotTrees, fun = max, na.rm = TRUE)
 trees_with_heights <- left_join(PlotTrees, st_drop_geometry(tree_heights), by = "ID")
 
 # Plot cropped las
-plot(las, size = 4, bg = "white")
-# plot(las, size = 2, color = "RGB", bg = "white")
+# plot(las, size = 4, bg = "white")
+plot(las, size = 2, color = "RGB", bg = "white")
 
 # Plot classified las
 gnd <- filter_ground(las_classified)
