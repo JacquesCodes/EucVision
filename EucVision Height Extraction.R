@@ -14,12 +14,11 @@ library(terra)
 # Read in already processed Canopy height models ####
 
 # My path to the remote sensing dataset
-myPath <- "E:/Remote Sensing Media/09. 14 November 2025/"
+myPath <- "E:/Remote Sensing Media/11. 28 November 2025/"
 
 # Read in tree location for height extraction
-# Make sure its CRS are 2048 please. Otherwise convert in QGIS with layer CRS function and then save as function.
-trees <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/QGIS Combined Output/30 October 2025/All_Plots_Reprojected.shp")
-# trees <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/QGIS Combined Output/1 September 2025/All_Plots.shp")
+# Make sure its CRS are 2048 please. Otherwise convert in QGIS with CRS layer function and then save as function.
+trees <- st_read(paste0(myPath,"08. Tree heights/Crown shape file/All_Plots.shp"))
 
 # Read in Canopy height models
 ctg_chm <-rast(paste0(myPath,"07. Canopy Height Models/rasterize_canopy.vrt"))

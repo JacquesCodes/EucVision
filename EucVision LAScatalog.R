@@ -13,17 +13,17 @@ library(terra)
 # Read in all point clouds and shape files ####
 
 # My path to the remote sensing dataset
-myPath <- "E:/Remote Sensing Media/11. 28 November 2025/"
+myPath <- "E:/Remote Sensing Media/06. 30 October 2025/"
 
 # Read in point clouds into a catalog (ctg)
 ctg <- readLAScatalog(paste0(myPath,"03. Point clouds"))
 
 # Read in shape files for individual plot boundaries
-plots_buffered_unsorted <- st_read(paste0("E:/Remote Sensing Media/00. QGIS Projects/1. Plot boundaries for cropping/R Plots.shp"))
+plots_buffered_unsorted <- st_read(paste0("E:/Remote Sensing Media/00. QGIS Projects/0. Plot boundaries for cropping/R Plots.shp"))
 plots <- plots_buffered_unsorted[order(plots_buffered_unsorted$id), ]
 
-# Read in tree location for height extraction
-trees <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/QGIS Combined Output/30 October 2025/All_Plots.shp")
+# Read in tree shape files for height extraction
+trees <- st_read(paste0(myPath,"08. Tree heights/Crown shape file/All_Plots.shp"))
 
 # View catalog, plots and trees
 plot(ctg)
