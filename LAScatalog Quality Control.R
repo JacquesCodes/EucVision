@@ -11,8 +11,7 @@ library(terra)
 library(rgl)
 
 # My path to the remote sensing dataset
-# myPath <- "E:/Remote Sensing Media/05. 1 September 2025/"
-myPath <- "E:/Remote Sensing Media/08. 30 October & 7 November 2025/"
+myPath <- "E:/Remote Sensing Media/09. 11 December 2025/"
 
 #Plot number
 Number <- 17
@@ -22,16 +21,16 @@ las_classified <- readLAS(paste0(myPath,"05. Point clouds ground classified/Plot
 las_normalised <- readLAS(paste0(myPath,"06. Point clouds normalised/Plot_",Number, "_classified_normalised.las"))
 las_chm <- rast(paste0(myPath,"07. Canopy Height Models/Plot_",Number, "_classified_normalised_chm.tif"))
 
-trees <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/QGIS Combined Output/1 September 2025/All_Plots.shp")
+trees <- st_read(paste0(myPath,"08. Crown shape file/All_Plots.shp"))
 
-PlotTrees <- trees[trees$Plot == paste0("Plot ",Number),]
+PlotTrees <- trees[trees$Plot == paste0("Plot_",Number),]
 
-# Ensure both have an ID column
-PlotTrees$ID <- 1:nrow(PlotTrees)
-# Calculate metrics
-tree_heights <- terra::extract(las_chm, PlotTrees, fun = max, na.rm = TRUE)
-# Join results back using the ID
-trees_with_heights <- left_join(PlotTrees, st_drop_geometry(tree_heights), by = "ID")
+# # Ensure both have an ID column
+# PlotTrees$ID <- 1:nrow(PlotTrees)
+# # Calculate metrics
+# tree_heights <- terra::extract(las_chm, PlotTrees, fun = max, na.rm = TRUE)
+# # Join results back using the ID
+# trees_with_heights <- left_join(PlotTrees, st_drop_geometry(tree_heights), by = "ID")
 
 # Plot cropped las
 # plot(las, size = 4, bg = "white")
@@ -74,6 +73,9 @@ plot(sf::st_geometry(ttops), add = TRUE, pch = 3)
 # Tree detection results can also be visualized in 3D!
 x <- plot(las_normalised, bg = "white", size = 2)
 add_treetops3d(x, ttops, radius = 0.15, fastTransparency = TRUE, alpha = 0.8)
+
+
+
 
 # Video
 

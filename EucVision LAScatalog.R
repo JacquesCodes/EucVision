@@ -13,22 +13,22 @@ library(terra)
 # Read in all point clouds and shape files ####
 
 # My path to the remote sensing dataset
-myPath <- "E:/Remote Sensing Media/06. 30 October 2025/"
+myPath <- "E:/Remote Sensing Media/12. 22 January 2026/"
 
 # Read in point clouds into a catalog (ctg)
 ctg <- readLAScatalog(paste0(myPath,"03. Point clouds"))
 
 # Read in shape files for individual plot boundaries
-plots_buffered_unsorted <- st_read(paste0("E:/Remote Sensing Media/00. QGIS Projects/0. Plot boundaries for cropping/R Plots.shp"))
+plots_buffered_unsorted <- st_read(paste0("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. Templates/EucVision LidR Boundaries/R Plots.shp"))
 plots <- plots_buffered_unsorted[order(plots_buffered_unsorted$id), ]
 
 # Read in tree shape files for height extraction
-trees <- st_read(paste0(myPath,"08. Tree heights/Crown shape file/All_Plots.shp"))
+# trees <- st_read(paste0(myPath,"08. Crown shape file/All_Plots.shp"))
 
 # View catalog, plots and trees
 plot(ctg)
 plot(plots$geometry,add = TRUE)
-plot(trees$geometry, add = TRUE, col = "red")
+# plot(trees$geometry, add = TRUE, col = "red")
 
 # Crop plots ####
 
@@ -81,7 +81,7 @@ toc()
 
 # Normalize plots ####
 
-# If in the future I user are unable to classify ground. Use a baseline raster from previous datasets:
+# If in the future the user are unable to classify ground. Use a baseline raster from previous datasets:
 # ctg_normalised <- normalize_height(las = ctg_classified, algorithm = tin(), dtm = )
 
 plan(multisession)
@@ -129,15 +129,6 @@ tree_heights <- terra::extract(ctg_chm, trees, fun = max, na.rm = TRUE)
 trees_with_heights <- left_join(trees, st_drop_geometry(tree_heights), by = "ID")
 
 # Save to shape and excel file
-st_write(trees_with_heights, paste0(myPath,"08. Tree heights/All Plots.shp"))
-st_write(trees_with_heights, paste0(myPath,"08. Tree heights/All Plots.csv"))
+st_write(trees_with_heights, paste0(myPath,"09. Tree heights/All Plots.shp"))
+st_write(trees_with_heights, paste0(myPath,"09. Tree heights/All Plots.csv"))
 toc()
-
-
-
-
-
-
-
-
-
