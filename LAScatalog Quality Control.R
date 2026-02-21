@@ -10,8 +10,11 @@ library(future)
 library(terra)
 library(rgl)
 
+# Change this single variable for each new batch!
+date_folder <- "13. 29 January 2026"
+
 # My path to the remote sensing dataset
-myPath <- "E:/Remote Sensing Media/09. 11 December 2025/"
+myPath <- paste0("E:/Remote Sensing Media/",date_folder,"/")
 
 #Plot number
 Number <- 17

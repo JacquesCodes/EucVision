@@ -12,23 +12,23 @@ library(terra)
 
 # Read in all point clouds and shape files ####
 
-# My path to the remote sensing dataset
-myPath <- "E:/Remote Sensing Media/12. 22 January 2026/"
+# Change this single variable for each new batch!
+date_folder <- "13. 29 January 2026"
 
 # Read in point clouds into a catalog (ctg)
-ctg <- readLAScatalog(paste0(myPath,"03. Point clouds"))
+ctg <- readLAScatalog(paste0("E:/Remote Sensing Media/",date_folder,"/03. Point clouds"))
 
 # Read in shape files for individual plot boundaries
 plots_buffered_unsorted <- st_read(paste0("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. Templates/EucVision LidR Boundaries/R Plots.shp"))
 plots <- plots_buffered_unsorted[order(plots_buffered_unsorted$id), ]
 
 # Read in tree shape files for height extraction
-# trees <- st_read(paste0(myPath,"08. Crown shape file/All_Plots.shp"))
+trees <- st_read(paste0("E:/Remote Sensing Media/",date_folder,"/08. Crown shape file/All_Plots.shp"))
 
 # View catalog, plots and trees
 plot(ctg)
 plot(plots$geometry,add = TRUE)
-# plot(trees$geometry, add = TRUE, col = "red")
+plot(trees$geometry, add = TRUE, col = "red")
 
 # Crop plots ####
 
@@ -42,7 +42,7 @@ opt_select(ctg) <- "xyz"
 # tic() & toc() is to check code running time
 tic()
 # Write to disk rather than memory:
-opt_output_files(ctg) <- paste0(myPath,"04. Point clouds clipped/", "Plot_{ID}")
+opt_output_files(ctg) <- paste0("E:/Remote Sensing Media/",date_folder,"/04. Point clouds clipped/", "Plot_{ID}")
 # Crop plots
 ctg_clipped <- clip_roi(ctg, plots)
 toc()
@@ -55,7 +55,7 @@ opt_select(ctg_clipped) <- "xyz"
 
 tic()
 # Write to disk rather than memory:
-opt_output_files(ctg_clipped) <- paste0(myPath,"05. Point clouds ground classified/", "{*}_classified")
+opt_output_files(ctg_clipped) <- paste0("E:/Remote Sensing Media/",date_folder,"/05. Point clouds ground classified/", "{*}_classified")
 # Ground classifications :
 ctg_classified <- classify_ground(ctg_clipped, csf(sloop_smooth = TRUE, 
                                                    class_threshold = 0.01, 
@@ -90,7 +90,7 @@ opt_select(ctg_classified) <- "xyz"
 
 tic()
 # Write to disk rather than memory:
-opt_output_files(ctg_classified) <- paste0(myPath,"06. Point clouds normalised/", "{*}_normalised")
+opt_output_files(ctg_classified) <- paste0("E:/Remote Sensing Media/",date_folder,"/06. Point clouds normalised/", "{*}_normalised")
 # A point cloud-based normalization without a raster:
 ctg_normalised <- normalize_height(las = ctg_classified, algorithm = tin())
 toc()
@@ -110,7 +110,7 @@ opt_select(ctg_normalised) <- "xyz"
 
 tic()
 # Write to disk rather than memory:
-opt_output_files(ctg_normalised) <- paste0(myPath,"07. Canopy Height Models/", "{*}_chm")
+opt_output_files(ctg_normalised) <- paste0("E:/Remote Sensing Media/",date_folder,"/07. Canopy Height Models/", "{*}_chm")
 # Rasterize canopy with interpolation:
 ctg_chm <- rasterize_canopy(ctg_normalised, res = 0.01, algorithm = p2r(na.fill = tin()))
 print("Rasterize canopy time:")
@@ -129,6 +129,6 @@ tree_heights <- terra::extract(ctg_chm, trees, fun = max, na.rm = TRUE)
 trees_with_heights <- left_join(trees, st_drop_geometry(tree_heights), by = "ID")
 
 # Save to shape and excel file
-st_write(trees_with_heights, paste0(myPath,"09. Tree heights/All Plots.shp"))
-st_write(trees_with_heights, paste0(myPath,"09. Tree heights/All Plots.csv"))
+st_write(trees_with_heights, paste0("E:/Remote Sensing Media/",date_folder,"/09. Tree heights/All Plots.shp"))
+st_write(trees_with_heights, paste0("E:/Remote Sensing Media/",date_folder,"/09. Tree heights/All Plots.csv"))
 toc()
