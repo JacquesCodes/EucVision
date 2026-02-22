@@ -14,7 +14,7 @@ library(terra)
 # Read in already processed Canopy height models ####
 
 # Change this single variable for each new batch!
-date_folder <- "13. 29 January 2026"
+date_folder <- "01. 25 February 2025"
 
 # Read in tree location for height extraction
 # Make sure its CRS are 2048 please. Otherwise convert in QGIS with CRS layer function and then save as function.
