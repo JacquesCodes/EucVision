@@ -21,7 +21,7 @@ folders <- folders[!basename(folders) %in% exclude_list]
 dataset_folders <- folders[grepl("^\\d{2}\\.", basename(folders))]
 
 # For only one folder at a time
-# dataset_folders <- "14. 06 February 2026"
+# dataset_folders <- file.path(base_dir, "07. 28 November 2025")
 
 all_extractions <- list()
 
@@ -101,10 +101,15 @@ for (folder_path in dataset_folders) {
       index_stack <- c(VARI, GLI, TGI)
       names(index_stack) <- c("VARI", "GLI", "TGI")
       
-      # Extract values
-      ext_vals <- exact_extract(index_stack, crowns, fun = 'mean', progress = FALSE)
-      colnames(ext_vals) <- c("Mean_VARI", "Mean_GLI", "Mean_TGI")
+      # Extract mean values
+      # ext_vals <- exact_extract(index_stack, crowns, fun = 'mean', progress = FALSE)
+      # colnames(ext_vals) <- c("Mean_VARI", "Mean_GLI", "Mean_TGI")
       
+      # Extract 90% percentile pixel values
+      ext_vals <- exact_extract(index_stack, crowns, fun = 'quantile', quantiles = 0.9, progress = FALSE)
+      colnames(ext_vals) <- c("90_VARI", "90_GLI", "90_TGI")
+      
+     
       crowns_data <- crowns %>%
         st_drop_geometry() %>%
         bind_cols(ext_vals) %>%
@@ -124,7 +129,7 @@ print("========================================")
 print("All folders processed. Merging datasets...")
 
 final_master_df <- bind_rows(all_extractions)
-output_path <- file.path(base_dir, "Master_RGB_Indices.csv")
+output_path <- file.path(base_dir, "Master_RGB_Indices_90_Percentile.csv")
 write.csv(final_master_df, output_path, row.names = FALSE)
 
 # Clean up the temporary directory we made

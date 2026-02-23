@@ -19,7 +19,7 @@ date_folder <- "13. 29 January 2026"
 ctg <- readLAScatalog(paste0("E:/Remote Sensing Media/",date_folder,"/03. Point clouds"))
 
 # Read in shape files for individual plot boundaries
-plots_buffered_unsorted <- st_read(paste0("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. Templates/EucVision LidR Boundaries/R Plots.shp"))
+plots_buffered_unsorted <- st_read(paste0("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. Templates/EucVision LidR Boundaries/EucVision LidR Boundaries.shp"))
 plots <- plots_buffered_unsorted[order(plots_buffered_unsorted$id), ]
 
 # Read in tree shape files for height extraction
