@@ -9,6 +9,7 @@ library(dplyr)
 library(future)
 library(sp)
 library(terra)
+library(exactextractr)
 
 # Read in all point clouds and shape files ####
 
@@ -24,6 +25,15 @@ plots <- plots_buffered_unsorted[order(plots_buffered_unsorted$id), ]
 
 # Read in tree shape files for height extraction
 trees <- st_read(paste0("E:/Remote Sensing Media/",date_folder,"/08. Crown shape file/All_Plots.shp"))
+
+# Automatically check and transform to EPSG: 2048 if it doesn't match
+if (is.na(st_crs(trees)$epsg) || st_crs(trees)$epsg != 2048) {
+  trees <- st_transform(trees, 2048)
+  print("Transformed CRS to 2048 successfully.")
+}
+
+trees <- trees %>%
+  select(-any_of(c("group_ulid", "N_GM", "id", "N_FG", "N_BG", "BBox")))
 
 # View catalog, plots and trees
 plot(ctg)
@@ -86,7 +96,8 @@ toc()
 
 plan(multisession)
 opt_independent_files(ctg_classified) <- TRUE
-opt_select(ctg_classified) <- "xyz"
+# Only load in x-,y-,z- coordinates and "c" the classification values into RAM
+opt_select(ctg_classified) <- "xyzc"
 
 tic()
 # Write to disk rather than memory:
@@ -95,40 +106,43 @@ opt_output_files(ctg_classified) <- paste0("E:/Remote Sensing Media/",date_folde
 ctg_normalised <- normalize_height(las = ctg_classified, algorithm = tin())
 toc()
 
+ctg_normalised <- readLAScatalog(paste0("E:/Remote Sensing Media/",date_folder,"/06. Point clouds normalised"))
+
 # Rasterize plots ####
 
-# You can optimize processing by utilizing RAM better in 3 ways:
+# You can optimize processing by utilizing RAM better in 4 ways:
 # 1. Use smaller chunk/plot sizes
 # 2. Use opt_select() to load only needed fields into memory
 # 3. Decrease amount of active workers (threads) as each workers uses own RAM
+# 4. Exclude ground points and sub-surface noise
 
 # Limit the amount of workers (threads) if you don't have enough RAM. Each worker uses own RAM.
 # plan(multisession)
-plan(multisession, workers = 5)
+plan(multisession, workers = 6)
 opt_independent_files(ctg_normalised) <- TRUE
 opt_select(ctg_normalised) <- "xyz"
+
+# Drop ground points and sub-surface noise
+opt_filter(ctg_normalised) <- "-drop_class 2 -drop_z_below 0"
 
 tic()
 # Write to disk rather than memory:
 opt_output_files(ctg_normalised) <- paste0("E:/Remote Sensing Media/",date_folder,"/07. Canopy Height Models/", "{*}_chm")
 # Rasterize canopy with interpolation:
-ctg_chm <- rasterize_canopy(ctg_normalised, res = 0.01, algorithm = p2r(na.fill = tin()))
+# Using a 3cm subcircle (radius of 0.015m) to thicken the canopy points:
+ctg_chm <- rasterize_canopy(ctg_normalised, res = 0.01, algorithm = p2r(subcircle = 0.015, na.fill = tin()))
 print("Rasterize canopy time:")
 toc()
 
 # Extract tree heights ####
 
 tic()
-# Ensure both have an ID column
-trees$ID <- 1:nrow(trees)
+# Calculate metrics using exact_extract (Outputs directly as a vector)
+trees$Tree_Height <- exact_extract(ctg_chm, trees, 'max')
 
-# Calculate metrics
-tree_heights <- terra::extract(ctg_chm, trees, fun = max, na.rm = TRUE)
+# Save to shapefile (completely overwriting old files to prevent schema errors)
+st_write(trees, paste0("E:/Remote Sensing Media/",date_folder,"/09. Tree heights/All Plots.shp"), delete_dsn = TRUE)
 
-# Join results back using the ID
-trees_with_heights <- left_join(trees, st_drop_geometry(tree_heights), by = "ID")
-
-# Save to shape and excel file
-st_write(trees_with_heights, paste0("E:/Remote Sensing Media/",date_folder,"/09. Tree heights/All Plots.shp"))
-st_write(trees_with_heights, paste0("E:/Remote Sensing Media/",date_folder,"/09. Tree heights/All Plots.csv"))
+# Save lightweight CSV without the messy spatial geometry text
+write.csv(st_drop_geometry(trees), paste0("E:/Remote Sensing Media/",date_folder,"/09. Tree heights/All Plots.csv"), row.names = FALSE)
 toc()

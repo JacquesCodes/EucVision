@@ -17,7 +17,7 @@ date_folder <- "13. 29 January 2026"
 myPath <- paste0("E:/Remote Sensing Media/",date_folder,"/")
 
 #Plot number
-Number <- 17
+Number <- 51
 
 las <- readLAS(paste0(myPath,"04. Point clouds clipped/Plot_",Number,".las"))
 las_classified <- readLAS(paste0(myPath,"05. Point clouds ground classified/Plot_",Number, "_classified.las"))
