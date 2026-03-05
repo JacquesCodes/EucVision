@@ -11,22 +11,22 @@ library(terra)
 library(rgl)
 
 # Change this single variable for each new batch!
-date_folder <- "13. 29 January 2026"
+date_folder <- "04. 07 November 2025"
 
 # My path to the remote sensing dataset
 myPath <- paste0("E:/Remote Sensing Media/",date_folder,"/")
 
 #Plot number
-Number <- 51
+Number <- 17
 
-las <- readLAS(paste0(myPath,"04. Point clouds clipped/Plot_",Number,".las"))
-las_classified <- readLAS(paste0(myPath,"05. Point clouds ground classified/Plot_",Number, "_classified.las"))
+# las <- readLAS(paste0(myPath,"04. Point clouds clipped/Plot_",Number,".las"))
+# las_classified <- readLAS(paste0(myPath,"05. Point clouds ground classified/Plot_",Number, "_classified.las"))
 las_normalised <- readLAS(paste0(myPath,"06. Point clouds normalised/Plot_",Number, "_classified_normalised.las"))
 las_chm <- rast(paste0(myPath,"07. Canopy Height Models/Plot_",Number, "_classified_normalised_chm.tif"))
 
-trees <- st_read(paste0(myPath,"08. Crown shape file/All_Plots.shp"))
+# trees <- st_read(paste0(myPath,"08. Crown shape file/All_Plots.shp"))
 
-PlotTrees <- trees[trees$Plot == paste0("Plot_",Number),]
+# PlotTrees <- trees[trees$Plot == paste0("Plot_",Number),]
 
 # # Ensure both have an ID column
 # PlotTrees$ID <- 1:nrow(PlotTrees)
@@ -37,22 +37,22 @@ PlotTrees <- trees[trees$Plot == paste0("Plot_",Number),]
 
 # Plot cropped las
 # plot(las, size = 4, bg = "white")
-plot(las, size = 2, color = "RGB", bg = "white")
+# plot(las, size = 2, color = "RGB", bg = "white")
 
 # Plot classified las
-gnd <- filter_ground(las_classified)
-plot(gnd, size = 4, bg = "white")
+# gnd <- filter_ground(las_classified)
+# plot(gnd, size = 4, bg = "white")
 
 # Plot DTM
-dtm_tin_0 <- rasterize_terrain(las_classified, res = 1, algorithm = tin())
-plot_dtm3d(dtm_tin_0, bg = "white") 
+# dtm_tin_0 <- rasterize_terrain(las_classified, res = 1, algorithm = tin())
+# plot_dtm3d(dtm_tin_0, bg = "white") 
 
 # Plot normalised las
-plot(las_normalised,bg = "white")
+plot(las_normalised,color = "RGB",bg = "white")
 
 # Plot canopy height model
 plot(las_chm, col = height.colors(50))
-plot(PlotTrees, add = TRUE, col = "red")
+# plot(PlotTrees, add = TRUE, col = "red")
 
 
 # 8.1 Individual Tree Detection (ITD)

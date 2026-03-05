@@ -14,7 +14,7 @@ library(exactextractr)
 # Read in all point clouds and shape files ####
 
 # Change this single variable for each new batch!
-date_folder <- "13. 29 January 2026"
+date_folder <- "17. 02 March 2026"
 
 # Read in point clouds into a catalog (ctg)
 ctg <- readLAScatalog(paste0("E:/Remote Sensing Media/",date_folder,"/03. Point clouds"))
@@ -23,22 +23,22 @@ ctg <- readLAScatalog(paste0("E:/Remote Sensing Media/",date_folder,"/03. Point 
 plots_buffered_unsorted <- st_read(paste0("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. Templates/EucVision LidR Boundaries/EucVision LidR Boundaries.shp"))
 plots <- plots_buffered_unsorted[order(plots_buffered_unsorted$id), ]
 
-# Read in tree shape files for height extraction
-trees <- st_read(paste0("E:/Remote Sensing Media/",date_folder,"/08. Crown shape file/All_Plots.shp"))
-
-# Automatically check and transform to EPSG: 2048 if it doesn't match
-if (is.na(st_crs(trees)$epsg) || st_crs(trees)$epsg != 2048) {
-  trees <- st_transform(trees, 2048)
-  print("Transformed CRS to 2048 successfully.")
-}
-
-trees <- trees %>%
-  select(-any_of(c("group_ulid", "N_GM", "id", "N_FG", "N_BG", "BBox")))
+# # Read in tree shape files for height extraction
+# trees <- st_read(paste0("E:/Remote Sensing Media/",date_folder,"/08. Crown shape file/All_Plots.shp"))
+# 
+# # Automatically check and transform to EPSG: 2048 if it doesn't match
+# if (is.na(st_crs(trees)$epsg) || st_crs(trees)$epsg != 2048) {
+#   trees <- st_transform(trees, 2048)
+#   print("Transformed CRS to 2048 successfully.")
+# }
+# 
+# trees <- trees %>%
+#   select(-any_of(c("group_ulid", "N_GM", "id", "N_FG", "N_BG", "BBox")))
 
 # View catalog, plots and trees
 plot(ctg)
 plot(plots$geometry,add = TRUE)
-plot(trees$geometry, add = TRUE, col = "red")
+# plot(trees$geometry, add = TRUE, col = "red")
 
 # Crop plots ####
 
