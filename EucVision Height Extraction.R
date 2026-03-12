@@ -14,7 +14,7 @@ library(exactextractr) # Added exactextractr
 # Read in already processed Canopy height models ####
 
 # Change this single variable for each new batch!
-date_folder <- "13. 29 January 2026"
+date_folder <- "17. 02 March 2026"
 
 # Read in tree location for height extraction
 # Make sure its CRS are 2048 please. Otherwise convert in QGIS with CRS layer function and then save as function.
@@ -22,7 +22,7 @@ trees <- st_read(paste0("E:/Remote Sensing Media/",date_folder,"/08. Crown shape
 
 # Safely remove old columns if they exist to prevent duplicate name/ESRI errors
 trees <- trees %>%
-  select(-any_of(c("group_ulid", "N_GM", "id", "N_FG", "N_BG", "BBox")))
+  select(-any_of(c("grop_ld","group_ulid", "N_GM", "id", "N_FG", "N_BG", "BBox")))
 
 # Read in Canopy height models
 ctg_chm <- rast(paste0("E:/Remote Sensing Media/",date_folder,"/07. Canopy Height Models/rasterize_canopy.vrt"))

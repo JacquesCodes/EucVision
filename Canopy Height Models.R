@@ -14,19 +14,19 @@ library(ggspatial)
 library(tidyterra)
 
 # Change this single variable for each new batch!
-date_folder <- "16. 23 February 2026"
+date_folder <- "02. 01 September 2025"
 
 # My path to the remote sensing dataset
 myPath <- paste0("E:/Remote Sensing Media/",date_folder,"/")
 
 #Plot number
-Number <- 22
+Number <- 1
 
 las_normalised <- readLAS(paste0(myPath,"06. Point clouds normalised/Plot_",Number, "_classified_normalised.las"))
 las_chm <- rast(paste0(myPath,"07. Canopy Height Models/Plot_",Number, "_classified_normalised_chm.tif"))
 
 # Plot normalised las with axes turned on for scale reference
-# plot(las_normalised, color = "RGB", size = 2, bg = "white", axis = TRUE)
+plot(las_normalised, color = "RGB", size = 2, bg = "white", axis = TRUE)
 
 chm_map <- ggplot() +
   # 1. Add the Canopy Height Model raster layer

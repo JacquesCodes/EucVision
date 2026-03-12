@@ -4,7 +4,7 @@ library(dplyr)
 
 # === CONFIGURE PATHS ===
 # Change this single variable for each new batch!
-date_folder <- "13. 29 January 2026"
+date_folder <- "17. 02 March 2026"
 
 # Define the base directories (these stay constant)
 base_input <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/03. QGIS Extracted data"
