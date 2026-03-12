@@ -32,6 +32,7 @@ plot(ctg_chm, range=c(-0.5,4))
 plot(trees$geometry, add = TRUE, col = "red")
 
 # Extract tree heights ####
+# Test
 
 tic()
 # Calculate metrics using exact_extract (Outputs directly as a vector)

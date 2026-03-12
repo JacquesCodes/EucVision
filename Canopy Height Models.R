@@ -14,13 +14,13 @@ library(ggspatial)
 library(tidyterra)
 
 # Change this single variable for each new batch!
-date_folder <- "02. 01 September 2025"
+date_folder <- "17. 02 March 2026"
 
 # My path to the remote sensing dataset
 myPath <- paste0("E:/Remote Sensing Media/",date_folder,"/")
 
 #Plot number
-Number <- 1
+Number <- 38
 
 las_normalised <- readLAS(paste0(myPath,"06. Point clouds normalised/Plot_",Number, "_classified_normalised.las"))
 las_chm <- rast(paste0(myPath,"07. Canopy Height Models/Plot_",Number, "_classified_normalised_chm.tif"))

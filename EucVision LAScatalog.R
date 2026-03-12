@@ -14,7 +14,7 @@ library(exactextractr)
 # Read in all point clouds and shape files ####
 
 # Change this single variable for each new batch!
-date_folder <- "17. 02 March 2026"
+date_folder <- "04. 07 November 2025"
 
 # Read in point clouds into a catalog (ctg)
 ctg <- readLAScatalog(paste0("E:/Remote Sensing Media/",date_folder,"/03. Point clouds"))
