@@ -11,13 +11,13 @@ library(terra)
 library(rgl)
 
 # Change this single variable for each new batch!
-date_folder <- "17. 02 March 2026"
+date_folder <- "20. 16 March 2026"
 
 # My path to the remote sensing dataset
 myPath <- paste0("E:/Remote Sensing Media/",date_folder,"/")
 
 #Plot number
-Number <- 1
+Number <- 17
 
 las <- readLAS(paste0(myPath,"04. Point clouds clipped/Plot_",Number,".las"))
 las_classified <- readLAS(paste0(myPath,"05. Point clouds ground classified/Plot_",Number, "_classified.las"))
@@ -36,22 +36,22 @@ las_chm <- rast(paste0(myPath,"07. Canopy Height Models/Plot_",Number, "_classif
 # trees_with_heights <- left_join(PlotTrees, st_drop_geometry(tree_heights), by = "ID")
 
 # Plot cropped las
-plot(las, size = 4, bg = "white")
-plot(las, size = 2, color = "RGB", bg = "white")
+plot(las, size = 4, bg = "white",axis = TRUE)
+# plot(las, size = 2, color = "RGB", bg = "white")
 
 # Plot classified las
 gnd <- filter_ground(las_classified)
-plot(gnd, size = 4, bg = "white")
+plot(gnd, size = 4, bg = "white",axis = TRUE)
 
 # Plot DTM
 dtm_tin_0 <- rasterize_terrain(las_classified, res = 1, algorithm = tin())
-plot_dtm3d(dtm_tin_0, bg = "white")
+plot_dtm3d(dtm_tin_0, bg = "white",axis = TRUE)
 
 # Plot normalised las
-plot(las_normalised,color = "RGB",bg = "white")
+plot(las_normalised,bg = "white",axis = TRUE)
 
 # Plot canopy height model
-plot(las_chm, col = height.colors(50))
+plot(las_chm, col = height.colors(50),axis = TRUE)
 # plot(PlotTrees, add = TRUE, col = "red")
 
 
@@ -80,44 +80,44 @@ add_treetops3d(x, ttops, radius = 0.15, fastTransparency = TRUE, alpha = 0.8)
 
 
 
-# Video
-
-# --- Define spin motion ---
-spin <- spin3d(axis = c(0, 0, 1), rpm = 6)
-
-# Doesn't work if you make the plot fullscreen.
-# --- Save the animation ---
-movie3d(
-  movie = "Tree_Tops_animation",   # base name for output
-  dir = getwd(),                   # output directory
-  spin,                            # the animation function
-  duration = 10,                   # 10 seconds
-  fps = 25,                        # frames per second
-  clean = TRUE,                    # remove frames after combining
-  type = "gif"                     # try making a .gif directly
-)
-
-
-# Testing csf cloth resolution = 1
-tic()
-las_classified_2 <- classify_ground(las, csf(sloop_smooth = TRUE, 
-                                             class_threshold = 0.05, 
-                                             cloth_resolution = 0.5,
-                                             rigidness = 1,
-                                             time_step = 0.65))
-
-plot(las_classified_2, color = "Classification", size = 3, bg = "white")
-print("CSF Ground filtering time:")
-toc()
-
-# Classified las
-gnd <- filter_ground(las_classified_2)
-plot(gnd, size = 3, bg = "white")
-
-# Classified ground
-dtm_tin_0 <- rasterize_terrain(las_classified_2, res = 0.01, algorithm = tin())
-plot_dtm3d(dtm_tin_0, bg = "white") 
-
-# Normalised 
-norm <- normalize_height(las = las_classified_2, algorithm = tin())
-plot(norm, size = 1, color = "RGB", bg = "white")
+# # Video
+# 
+# # --- Define spin motion ---
+# spin <- spin3d(axis = c(0, 0, 1), rpm = 6)
+# 
+# # Doesn't work if you make the plot fullscreen.
+# # --- Save the animation ---
+# movie3d(
+#   movie = "Tree_Tops_animation",   # base name for output
+#   dir = getwd(),                   # output directory
+#   spin,                            # the animation function
+#   duration = 10,                   # 10 seconds
+#   fps = 25,                        # frames per second
+#   clean = TRUE,                    # remove frames after combining
+#   type = "gif"                     # try making a .gif directly
+# )
+# 
+# 
+# # Testing csf cloth resolution = 1
+# tic()
+# las_classified_2 <- classify_ground(las, csf(sloop_smooth = TRUE, 
+#                                              class_threshold = 0.05, 
+#                                              cloth_resolution = 0.5,
+#                                              rigidness = 1,
+#                                              time_step = 0.65))
+# 
+# plot(las_classified_2, color = "Classification", size = 3, bg = "white")
+# print("CSF Ground filtering time:")
+# toc()
+# 
+# # Classified las
+# gnd <- filter_ground(las_classified_2)
+# plot(gnd, size = 3, bg = "white")
+# 
+# # Classified ground
+# dtm_tin_0 <- rasterize_terrain(las_classified_2, res = 0.01, algorithm = tin())
+# plot_dtm3d(dtm_tin_0, bg = "white") 
+# 
+# # Normalised 
+# norm <- normalize_height(las = las_classified_2, algorithm = tin())
+# plot(norm, size = 1, color = "RGB", bg = "white")
