@@ -114,7 +114,7 @@ toc()
 # 3. Decrease amount of active workers (threads) as each workers uses own RAM
 # 4. Exclude ground points and sub-surface noise
 
-ctg_normalised <- readLAScatalog(paste0("E:/Remote Sensing Media/",date_folder,"/06. Point clouds normalised 2.4"))
+ctg_normalised <- readLAScatalog(paste0("E:/Remote Sensing Media/",date_folder,"/06. Point clouds normalised"))
 
 # Limit the amount of workers (threads) if you don't have enough RAM. Each worker uses own RAM.
 # plan(multisession)

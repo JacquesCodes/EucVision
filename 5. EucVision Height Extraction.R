@@ -14,7 +14,7 @@ library(exactextractr) # Added exactextractr
 # Read in already processed Canopy height models ####
 
 # Change this single variable for each new batch!
-date_folder <- "03. 30 October 2025"
+date_folder <- "17. 02 March 2026"
 
 # Read in tree location for height extraction
 # Make sure its CRS are 2048 please. Otherwise convert in QGIS with CRS layer function and then save as function.
@@ -27,12 +27,17 @@ trees <- trees %>%
 # Read in Canopy height models
 ctg_chm <- rast(paste0("E:/Remote Sensing Media/",date_folder,"/07. Canopy Height Models/rasterize_canopy.vrt"))
 
+# Automatically check and transform to EPSG: 2048 if it doesn't match
+if (is.na(st_crs(trees)$epsg) || st_crs(trees)$epsg != 2048) {
+  trees <- st_transform(trees, 2048)
+  print("Transformed CRS to 2048 successfully.")
+}
+
 # Plot Canopy Height Models and tree shape files
-plot(ctg_chm, range=c(-0.5,4))
+plot(ctg_chm,range=c(0,6))
 plot(trees$geometry, add = TRUE, col = "red")
 
 # Extract tree heights ####
-# Test
 
 tic()
 # Calculate metrics using exact_extract (Outputs directly as a vector)
