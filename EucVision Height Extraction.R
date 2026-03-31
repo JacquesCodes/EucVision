@@ -14,7 +14,7 @@ library(exactextractr) # Added exactextractr
 # Read in already processed Canopy height models ####
 
 # Change this single variable for each new batch!
-date_folder <- "17. 02 March 2026"
+date_folder <- "03. 30 October 2025"
 
 # Read in tree location for height extraction
 # Make sure its CRS are 2048 please. Otherwise convert in QGIS with CRS layer function and then save as function.

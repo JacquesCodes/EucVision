@@ -14,7 +14,7 @@ library(exactextractr)
 # Read in all point clouds and shape files ####
 
 # Change this single variable for each new batch!
-date_folder <- "18. 03 March 2026"
+date_folder <- "17. 02 March 2026"
 
 # Read in point clouds into a catalog (ctg)
 ctg <- readLAScatalog(paste0("E:/Remote Sensing Media/",date_folder,"/03. Point clouds"))
@@ -25,15 +25,6 @@ plots <- plots_buffered_unsorted[order(plots_buffered_unsorted$id), ]
 
 # Read in tree shape files for height extraction
 trees <- st_read(paste0("E:/Remote Sensing Media/",date_folder,"/08. Crown shape file/All_Plots.shp"))
-
-# Multiply the geometry by -1 to flip the signs across the 0,0 origin
-st_geometry(trees) <- st_geometry(trees) * -1
-st_geometry(plots) <- st_geometry(plots) * -1
-
-# Note: Performing arithmetic on sf geometry sometimes drops or invalidates the CRS string. 
-# We re-assign the CRS from the LAS header to ensure they perfectly match moving forward.
-st_crs(trees) <- st_crs(ctg)
-st_crs(plots) <- st_crs(ctg)
 
 # Automatically check and transform to EPSG: 2048 if it doesn't match
 if (is.na(st_crs(trees)$epsg) || st_crs(trees)$epsg != 2048) {
@@ -115,8 +106,6 @@ opt_output_files(ctg_classified) <- paste0("E:/Remote Sensing Media/",date_folde
 ctg_normalised <- normalize_height(las = ctg_classified, algorithm = tin())
 toc()
 
-ctg_normalised <- readLAScatalog(paste0("E:/Remote Sensing Media/",date_folder,"/06. Point clouds normalised"))
-
 # Rasterize plots ####
 
 # You can optimize processing by utilizing RAM better in 4 ways:
@@ -125,9 +114,11 @@ ctg_normalised <- readLAScatalog(paste0("E:/Remote Sensing Media/",date_folder,"
 # 3. Decrease amount of active workers (threads) as each workers uses own RAM
 # 4. Exclude ground points and sub-surface noise
 
+ctg_normalised <- readLAScatalog(paste0("E:/Remote Sensing Media/",date_folder,"/06. Point clouds normalised 2.4"))
+
 # Limit the amount of workers (threads) if you don't have enough RAM. Each worker uses own RAM.
 # plan(multisession)
-plan(multisession, workers = 6)
+plan(multisession, workers = 8)
 opt_independent_files(ctg_normalised) <- TRUE
 opt_select(ctg_normalised) <- "xyz"
 
@@ -138,8 +129,9 @@ tic()
 # Write to disk rather than memory:
 opt_output_files(ctg_normalised) <- paste0("E:/Remote Sensing Media/",date_folder,"/07. Canopy Height Models/", "{*}_chm")
 # Rasterize canopy with interpolation:
-# Using a 3cm subcircle (radius of 0.015m) to thicken the canopy points:
-ctg_chm <- rasterize_canopy(ctg_normalised, res = 0.01, algorithm = p2r(subcircle = 0.015, na.fill = tin()))
+
+ctg_chm <- rasterize_canopy(ctg_normalised, res = 0.05,
+                             algorithm = p2r(na.fill = tin()))
 print("Rasterize canopy time:")
 toc()
 
