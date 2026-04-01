@@ -26,7 +26,7 @@ file_date_safe <- gsub(" ", "_", file_date)
 myPath <- paste0("E:/Remote Sensing Media/",date_folder,"/")
 
 # Plot number
-Number <- 37
+Number <- 9
 
 # Dynamically construct the single-date file names
 name_clipped <- paste0("Plot_", Number, "_", file_date_safe)
@@ -59,9 +59,11 @@ if (file.exists(path_chm)) {
   w <- matrix(1, nrow = 5, ncol = 5) 
   
   # Apply the focal smoothing function to the filtered CHM
-  smoothed_chm <- terra::focal(las_chm, w = w, fun = mean, na.rm = TRUE)
+  smoothed_chm <- terra::focal(las_chm, w = w, fun = max, na.rm = TRUE)
   
   message("Loaded and smoothed: ", name_chm, ".tif")
+  
+  
 } else {
   message("Skipped: Could not find folder or file for 07. Canopy Height Models")
   las_chm <- NULL
