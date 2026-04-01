@@ -4,7 +4,15 @@ library(dplyr)
 
 # === CONFIGURE PATHS ===
 # Change this single variable for each new batch!
-date_folder <- "15. 16 February 2026"
+date_folder <- "17. 02 March 2026"
+
+# Extract the date part by removing the leading folder number, dot, and space
+# This turns "17. 02 March 2026" into "02 March 2026"
+file_date <- sub("^\\d+\\.\\s*", "", date_folder)
+
+# Replace spaces with underscores for safer file naming conventions
+# This turns "02 March 2026" into "02_March_2026"
+file_date_safe <- gsub(" ", "_", file_date)
 
 # Define the base directories (these stay constant)
 base_input <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/03. QGIS Extracted data"
@@ -14,8 +22,11 @@ csv_path <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc
 # Dynamically construct the full paths
 input_folder <- file.path(base_input, date_folder)
 output_folder <- file.path(base_output, date_folder)
-output_shp <- file.path(output_folder, "All_Plots.shp")
-base_output_file <- paste0("E:/Remote Sensing Media/",date_folder,"/08. Crown shape file/All_Plots.shp")
+
+# Teams backup
+output_shp <- file.path(output_folder, paste0("Crown_Polygons_", file_date_safe, ".shp"))
+# SSD drive
+base_output_file <- paste0("E:/Remote Sensing Media/", date_folder, "/08. Crown Polygons/Crown_Polygons_", file_date_safe, ".shp")
 
 # Create the output directory if it doesn't already exist
 if (!dir.exists(output_folder)) {
@@ -70,8 +81,8 @@ if(nrow(csv_data) != nrow(combined_sf)) {
 combined_sf <- bind_cols(csv_data, combined_sf) %>% st_as_sf()
 
 # Write the merged shapefile to the output directory
-# delete_layer = TRUE allows it to overwrite if the file already exists
-st_write(combined_sf, output_shp, delete_layer = TRUE)
-st_write(combined_sf, base_output_file, delete_layer = TRUE)
+# UPDATED: delete_dsn = TRUE matches your main lidR script for safe shapefile overwriting
+st_write(combined_sf, output_shp, delete_dsn = TRUE)
+st_write(combined_sf, base_output_file, delete_dsn = TRUE)
 
 cat("✅ All done. CSV attached. Merged shapefile successfully saved to:\n", output_shp, "\n")

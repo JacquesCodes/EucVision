@@ -16,18 +16,23 @@ library(exactextractr)
 # Change this single variable for each new batch!
 date_folder <- "17. 02 March 2026"
 
-# Read in point clouds into a catalog (ctg)
-ctg <- readLAScatalog(paste0("E:/Remote Sensing Media/",date_folder,"/03. Point clouds"))
+# Extract the date part by removing the leading folder number, dot, and space
+# This turns "17. 02 March 2026" into "02 March 2026"
+file_date <- sub("^\\d+\\.\\s*", "", date_folder)
 
-# Load the master DTM at the start of your script
-baseline_dtm <- rast("E:/Remote Sensing Media/00. Baseline DTM and plot cropping/Master_Baseline_DTM.tif")
+# Replace spaces with underscores for safer file naming conventions
+# This turns "02 March 2026" into "02_March_2026"
+file_date_safe <- gsub(" ", "_", file_date)
+
+# Read in point clouds into a catalog (ctg)
+ctg <- readLAScatalog(paste0("E:/Remote Sensing Media/",date_folder,"/03. Point Clouds"))
 
 # Read in shape files for individual plot boundaries
 plots_buffered_unsorted <- st_read(paste0("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. Templates/EucVision LidR Boundaries/EucVision LidR Boundaries.shp"))
 plots <- plots_buffered_unsorted[order(plots_buffered_unsorted$id), ]
 
 # Read in tree shape files for height extraction
-trees <- st_read(paste0("E:/Remote Sensing Media/",date_folder,"/08. Crown shape file/All_Plots.shp"))
+trees <- st_read(paste0("E:/Remote Sensing Media/", date_folder, "/08. Crown Polygons/Crown_Polygons_", file_date_safe, ".shp"))
 
 # Automatically check and transform to EPSG: 2048 if it doesn't match
 if (is.na(st_crs(trees)$epsg) || st_crs(trees)$epsg != 2048) {
@@ -55,42 +60,41 @@ opt_select(ctg) <- "xyz"
 # tic() & toc() is to check code running time
 tic()
 # Write to disk rather than memory:
-opt_output_files(ctg) <- paste0("E:/Remote Sensing Media/",date_folder,"/04. Point clouds clipped/", "Plot_{ID}")
+opt_output_files(ctg) <- paste0("E:/Remote Sensing Media/",date_folder,"/04. Point Clouds Clipped/", "Plot_{ID}_", file_date_safe)
 # Crop plots
 ctg_clipped <- clip_roi(ctg, plots)
 toc()
 
-# # Classify plots ####
-# 
-# plan(multisession)
-# opt_independent_files(ctg_clipped) <- TRUE
-# opt_select(ctg_clipped) <- "xyz"
-# 
-# tic()
-# # Write to disk rather than memory:
-# opt_output_files(ctg_clipped) <- paste0("E:/Remote Sensing Media/",date_folder,"/05. Point clouds ground classified/", "{*}_classified")
-# # Ground classifications :
-# ctg_classified <- classify_ground(ctg_clipped, csf(sloop_smooth = TRUE, 
-#                                                    class_threshold = 0.01, 
-#                                                    cloth_resolution = 1, 
-#                                                    time_step = 1))
-# toc()
-# 
-# # Class_threshold 
-# # => The distance to the simulated cloth to classify a point cloud into ground and non-ground. 
-# # The default is 0.5. 
-# # Need to be set no larger than the smallest tree. 0.01 preferred for best height estimations.
-# # The higher the value the higher the ground classifications become. 
-# 
-# 
-# # Cloth_resolution 
-# # => The distance between particles in the cloth. 
-# # This is usually set to the average distance of the points in the point cloud. 
-# # The default value is 0.5.
-# # PREFFERED = 1
-# # DO NOT MAKE LOWER THAN 1 as it classify trees as ground points because of canopy closure
-# # Needed to make value to 1 for 1m x 1m plots 
-# # Otherwise the cloth falls between the points and classify trees.
+# Classify plots ####
+
+plan(multisession)
+opt_independent_files(ctg_clipped) <- TRUE
+opt_select(ctg_clipped) <- "xyz"
+
+tic()
+# Write to disk rather than memory:
+opt_output_files(ctg_clipped) <- paste0("E:/Remote Sensing Media/",date_folder,"/05. Point Clouds Ground Classified/", "{*}_classified")
+# Ground classifications :
+ctg_classified <- classify_ground(ctg_clipped, csf(sloop_smooth = TRUE, 
+                                                   class_threshold = 0.01, 
+                                                   cloth_resolution = 1, 
+                                                   time_step = 1))
+toc()
+
+# Class_threshold 
+# => The distance to the simulated cloth to classify a point cloud into ground and non-ground. 
+# The default is 0.5. 
+# Need to be set no larger than the smallest tree. 0.01 preferred for best height estimations.
+# The higher the value the higher the ground classifications become. 
+
+# Cloth_resolution 
+# => The distance between particles in the cloth. 
+# This is usually set to the average distance of the points in the point cloud. 
+# The default value is 0.5.
+# PREFFERED = 1
+# DO NOT MAKE LOWER THAN 1 as it classify trees as ground points because of canopy closure
+# Needed to make value to 1 for 1m x 1m plots 
+# Otherwise the cloth falls between the points and classify trees.
 
 # Normalize plots ####
 
@@ -104,13 +108,9 @@ opt_select(ctg_classified) <- "xyzc"
 
 tic()
 # Write to disk rather than memory:
-opt_output_files(ctg_classified) <- paste0("E:/Remote Sensing Media/",date_folder,"/06. Point clouds normalised/", "{*}_normalised")
-
-# Normalize directly using the master raster
-ctg_normalised <- normalize_height(las = ctg_clipped, algorithm = baseline_dtm)
-
+opt_output_files(ctg_classified) <- paste0("E:/Remote Sensing Media/",date_folder,"/06. Point Clouds Normalised/", "{*}_normalised")
 # A point cloud-based normalization without a raster:
-# ctg_normalised <- normalize_height(las = ctg_classified, algorithm = tin())
+ctg_normalised <- normalize_height(las = ctg_classified, algorithm = tin())
 toc()
 
 # Rasterize plots ####
@@ -121,7 +121,7 @@ toc()
 # 3. Decrease amount of active workers (threads) as each workers uses own RAM
 # 4. Exclude ground points and sub-surface noise
 
-ctg_normalised <- readLAScatalog(paste0("E:/Remote Sensing Media/",date_folder,"/06. Point clouds normalised"))
+ctg_normalised <- readLAScatalog(paste0("E:/Remote Sensing Media/",date_folder,"/06. Point Clouds Normalised"))
 
 # Limit the amount of workers (threads) if you don't have enough RAM. Each worker uses own RAM.
 # plan(multisession)
@@ -149,8 +149,8 @@ tic()
 trees$Tree_Height <- exact_extract(ctg_chm, trees, 'max')
 
 # Save to shapefile (completely overwriting old files to prevent schema errors)
-st_write(trees, paste0("E:/Remote Sensing Media/",date_folder,"/09. Tree heights/All Plots.shp"), delete_dsn = TRUE)
+st_write(trees, paste0("E:/Remote Sensing Media/",date_folder,"/09. Crown Metrics/Crown_Metrics_", file_date_safe, ".shp"), delete_dsn = TRUE)
 
 # Save lightweight CSV without the messy spatial geometry text
-write.csv(st_drop_geometry(trees), paste0("E:/Remote Sensing Media/",date_folder,"/09. Tree heights/All Plots.csv"), row.names = FALSE)
+write.csv(st_drop_geometry(trees), paste0("E:/Remote Sensing Media/",date_folder,"/09. Crown Metrics/Crown_Metrics_", file_date_safe, ".csv"), row.names = FALSE)
 toc()

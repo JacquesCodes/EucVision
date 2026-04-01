@@ -9,32 +9,37 @@ library(dplyr)
 library(future)
 library(sp)
 library(terra)
-library(exactextractr) # Added exactextractr
+library(exactextractr) 
 
 # Read in already processed Canopy height models ####
 
 # Change this single variable for each new batch!
 date_folder <- "17. 02 March 2026"
 
-# Read in tree location for height extraction
-# Make sure its CRS are 2048 please. Otherwise convert in QGIS with CRS layer function and then save as function.
-trees <- st_read(paste0("E:/Remote Sensing Media/",date_folder,"/08. Crown shape file/All_Plots.shp"))
+# Extract the date part for file naming
+file_date <- sub("^\\d+\\.\\s*", "", date_folder)
+file_date_safe <- gsub(" ", "_", file_date)
 
-# Safely remove old columns if they exist to prevent duplicate name/ESRI errors
-trees <- trees %>%
-  select(-any_of(c("grop_ld","group_ulid", "N_GM", "id", "N_FG", "N_BG", "BBox")))
-
-# Read in Canopy height models
-ctg_chm <- rast(paste0("E:/Remote Sensing Media/",date_folder,"/07. Canopy Height Models/rasterize_canopy.vrt"))
+# 1. Read in tree locations (Updated folder and file name)
+path_trees <- paste0("E:/Remote Sensing Media/", date_folder, "/08. Crown Polygons/Crown_Polygons_", file_date_safe, ".shp")
+trees <- st_read(path_trees)
 
 # Automatically check and transform to EPSG: 2048 if it doesn't match
 if (is.na(st_crs(trees)$epsg) || st_crs(trees)$epsg != 2048) {
   trees <- st_transform(trees, 2048)
-  print("Transformed CRS to 2048 successfully.")
+  message("Transformed CRS to 2048 successfully.")
 }
 
+# Safely remove old columns if they exist to prevent duplicate name/ESRI errors
+trees <- trees %>%
+  select(-any_of(c("grop_ld", "group_ulid", "N_GM", "id", "N_FG", "N_BG", "BBox")))
+
+# 2. Read in Canopy height models (Updated folder name to Title Case)
+# Keeping the .vrt reference as requested
+ctg_chm <- rast(paste0("E:/Remote Sensing Media/", date_folder, "/07. Canopy Height Models/rasterize_canopy.vrt"))
+
 # Plot Canopy Height Models and tree shape files
-plot(ctg_chm,range=c(0,6))
+plot(ctg_chm, range = c(0, 6))
 plot(trees$geometry, add = TRUE, col = "red")
 
 # Extract tree heights ####
@@ -43,9 +48,15 @@ tic()
 # Calculate metrics using exact_extract (Outputs directly as a vector)
 trees$Tree_Height <- exact_extract(ctg_chm, trees, 'max')
 
+# 3. Save to Crown Metrics (Updated folder and file name)
+output_path_shp <- paste0("E:/Remote Sensing Media/", date_folder, "/09. Crown Metrics/Crown_Metrics_", file_date_safe, ".shp")
+output_path_csv <- paste0("E:/Remote Sensing Media/", date_folder, "/09. Crown Metrics/Crown_Metrics_", file_date_safe, ".csv")
+
 # Save to shapefile (completely overwriting old files to prevent schema errors)
-st_write(trees, paste0("E:/Remote Sensing Media/",date_folder,"/09. Tree heights/All Plots.shp"), delete_dsn = TRUE)
+st_write(trees, output_path_shp, delete_dsn = TRUE)
 
 # Save lightweight CSV without the messy spatial geometry text
-write.csv(st_drop_geometry(trees), paste0("E:/Remote Sensing Media/",date_folder,"/09. Tree heights/All Plots.csv"), row.names = FALSE)
+write.csv(st_drop_geometry(trees), output_path_csv, row.names = FALSE)
+
+message("✅ Extraction complete. Metrics saved to: ", output_path_csv)
 toc()
