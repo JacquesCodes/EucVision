@@ -26,7 +26,7 @@ file_date_safe <- gsub(" ", "_", file_date)
 myPath <- paste0("E:/Remote Sensing Media/",date_folder,"/")
 
 # Plot number
-Number <- 38
+Number <- 37
 
 # Dynamically construct the single-date file names
 name_clipped <- paste0("Plot_", Number, "_", file_date_safe)
@@ -51,13 +51,21 @@ if (file.exists(path_chm)) {
   las_chm <- rast(path_chm)
   
   # Filter out the rogue photogrammetry noise
-  las_chm[las_chm > 15] <- NA  # Replace 8 with your realistic upper threshold
-  las_chm[las_chm < 0] <- 0   # Optional: Cleans up any sub-surface negative noise
+  las_chm[las_chm > 15] <- NA  # Replace 15 with your realistic upper threshold
+  las_chm[las_chm < 0] <- 0    # Optional: Cleans up any sub-surface negative noise
   
-  message("Loaded: ", name_chm, ".tif")
+  # --- ADDED: Smooth the CHM ---
+  # Define the moving window 'w' (A 3x3 matrix is standard for basic smoothing)
+  w <- matrix(1, nrow = 5, ncol = 5) 
+  
+  # Apply the focal smoothing function to the filtered CHM
+  smoothed_chm <- terra::focal(las_chm, w = w, fun = mean, na.rm = TRUE)
+  
+  message("Loaded and smoothed: ", name_chm, ".tif")
 } else {
   message("Skipped: Could not find folder or file for 07. Canopy Height Models")
   las_chm <- NULL
+  smoothed_chm <- NULL # Ensure this is null if the file didn't load
 }
 
 # --- Plotting Section ---
@@ -68,11 +76,11 @@ if (file.exists(path_chm)) {
 #   plot(las_normalised, size = 2, bg = "white")
 # }
 
-# Only generate the map if the CHM loaded successfully
-if (!is.null(las_chm)) {
+# Only generate the map if the smoothed CHM was successfully created
+if (!is.null(smoothed_chm)) {
   chm_map <- ggplot() +
-    # 1. Add the Canopy Height Model raster layer
-    geom_spatraster(data = las_chm) +
+    # 1. Add the Smoothed Canopy Height Model raster layer (Updated to smoothed_chm)
+    geom_spatraster(data = smoothed_chm) +
     
     # 2. Add the tree locations (uncomment if PlotTrees is loaded)
     # geom_sf(data = PlotTrees, color = "red", size = 1.5, shape = 16) +
@@ -98,9 +106,9 @@ if (!is.null(las_chm)) {
       style = north_arrow_fancy_orienteering()
     ) +
     
-    # 6. Formatting and Titles
+    # 6. Formatting and Titles (Updated title to indicate it is smoothed)
     labs(
-      title = "Canopy Height Model",
+      title = "Smoothed Canopy Height Model",
       subtitle = paste0("Plot ",Number," - ",file_date),
       x = "Longitude",
       y = "Latitude"

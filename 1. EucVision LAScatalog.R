@@ -137,7 +137,8 @@ tic()
 opt_output_files(ctg_normalised) <- paste0("E:/Remote Sensing Media/",date_folder,"/07. Canopy Height Models/", "{*}_chm")
 # Rasterize canopy with interpolation:
 
-ctg_chm <- rasterize_canopy(ctg_normalised, res = 0.05,
+ctg_chm <- rasterize_canopy(ctg_normalised,
+                            res = 0.05,
                             algorithm = p2r(na.fill = tin()))
 print("Rasterize canopy time:")
 toc()
