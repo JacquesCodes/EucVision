@@ -14,7 +14,7 @@ library(exactextractr)
 # Read in all point clouds and shape files ####
 
 # Change this single variable for each new batch!
-date_folder <- "17. 02 March 2026"
+date_folder <- "16. 23 February 2026"
 
 # Extract the date part by removing the leading folder number, dot, and space
 # This turns "17. 02 March 2026" into "02 March 2026"

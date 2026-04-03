@@ -4,7 +4,7 @@ library(dplyr)
 
 # === CONFIGURE PATHS ===
 # Change this single variable for each new batch!
-date_folder <- "17. 02 March 2026"
+date_folder <- "16. 23 February 2026"
 
 # Extract the date part by removing the leading folder number, dot, and space
 # This turns "17. 02 March 2026" into "02 March 2026"
@@ -28,9 +28,15 @@ output_shp <- file.path(output_folder, paste0("Crown_Polygons_", file_date_safe,
 # SSD drive
 base_output_file <- paste0("E:/Remote Sensing Media/", date_folder, "/08. Crown Polygons/Crown_Polygons_", file_date_safe, ".shp")
 
-# Create the output directory if it doesn't already exist
+# Create the Teams backup output directory if it doesn't already exist
 if (!dir.exists(output_folder)) {
   dir.create(output_folder, recursive = TRUE)
+}
+
+# Create the directory for the SSD drive if it doesn't exist
+ssd_dir <- dirname(base_output_file)
+if (!dir.exists(ssd_dir)) {
+  dir.create(ssd_dir, recursive = TRUE)
 }
 
 # Get a list of all shapefiles in the input folder
@@ -81,8 +87,8 @@ if(nrow(csv_data) != nrow(combined_sf)) {
 combined_sf <- bind_cols(csv_data, combined_sf) %>% st_as_sf()
 
 # Write the merged shapefile to the output directory
-# UPDATED: delete_dsn = TRUE matches your main lidR script for safe shapefile overwriting
-st_write(combined_sf, output_shp, delete_dsn = TRUE)
-st_write(combined_sf, base_output_file, delete_dsn = TRUE)
+# append = FALSE cleanly overwrites existing files without throwing errors if they don't exist yet
+st_write(combined_sf, output_shp, append = FALSE)
+st_write(combined_sf, base_output_file, append = FALSE)
 
 cat("✅ All done. CSV attached. Merged shapefile successfully saved to:\n", output_shp, "\n")
