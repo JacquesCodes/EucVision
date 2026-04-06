@@ -14,7 +14,7 @@ library(ggspatial)
 library(tidyterra)
 
 # Change this single variable for each new batch!
-date_folder <- "19. 16 March 2026"
+date_folder <- "17. 02 March 2026"
 
 # Extract the date part by removing the leading folder number, dot, and space
 file_date <- sub("^\\d+\\.\\s*", "", date_folder)
@@ -26,7 +26,7 @@ file_date_safe <- gsub(" ", "_", file_date)
 myPath <- paste0("E:/Remote Sensing Media/",date_folder,"/")
 
 # Plot number
-Number <- 9
+Number <- 44
 
 # Dynamically construct the single-date file names
 name_clipped <- paste0("Plot_", Number, "_", file_date_safe)
@@ -89,7 +89,7 @@ if (!is.null(smoothed_chm)) {
     
     # 3. Define the color palette for the raster
     scale_fill_viridis_c(
-      name = "Canopy Height (m)", 
+      name = "Canopy\nHeight (m)", 
       option = "viridis", 
       na.value = "transparent"
     ) +

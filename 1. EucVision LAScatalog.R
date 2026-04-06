@@ -130,7 +130,7 @@ opt_independent_files(ctg_normalised) <- TRUE
 opt_select(ctg_normalised) <- "xyz"
 
 # Drop ground points and sub-surface noise
-opt_filter(ctg_normalised) <- "-drop_class 2 -drop_z_below 0 -drop_z_above 30"
+opt_filter(ctg_normalised) <- "-drop_z_below 0 -drop_z_above 30"
 
 tic()
 # Write to disk rather than memory:

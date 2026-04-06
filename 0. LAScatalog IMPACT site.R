@@ -49,7 +49,7 @@ opt_select(ctg) <- "xyz"
 
 tic()
 # Changed output naming since it's likely a single boundary polygon now, not 75 plots with IDs
-opt_output_files(ctg) <- paste0("E:/Remote Sensing Media/",date_folder,"/04. Point Clouds Clipped/IMPACT_Site_", file_date_safe)
+opt_output_files(ctg) <- paste0("E:/Remote Sensing Media/",date_folder,"/04. Point Clouds Clipped IMPACT/IMPACT_Site_", file_date_safe)
 ctg_clipped <- clip_roi(ctg, IMPACT_Boundaries)
 toc()
 
@@ -65,7 +65,7 @@ opt_chunk_size(ctg_clipped) <- 200 # Process in 200m x 200m chunks
 opt_chunk_buffer(ctg_clipped) <- 10  # 10m buffer around chunks to prevent edge artifacts
 
 tic()
-opt_output_files(ctg_clipped) <- paste0("E:/Remote Sensing Media/",date_folder,"/05. Point Clouds Ground Classified/", "IMPACT_Tile_{XLEFT}_{YBOTTOM}_classified", file_date_safe)
+opt_output_files(ctg_clipped) <- paste0("E:/Remote Sensing Media/",date_folder,"/05. Point Clouds Ground Classified IMPACT/", "IMPACT_Tile_{XLEFT}_{YBOTTOM}_classified", file_date_safe)
 ctg_classified <- classify_ground(ctg_clipped, csf(sloop_smooth = TRUE, 
                                                    class_threshold = 0.15, 
                                                    cloth_resolution = 1.5, 
@@ -111,25 +111,25 @@ opt_chunk_size(ctg_classified) <- 200
 opt_chunk_buffer(ctg_classified) <- 10 
 
 tic()
-opt_output_files(ctg_classified) <- paste0("E:/Remote Sensing Media/",date_folder,"/06. Point Clouds Normalised/", "IMPACT_Tile_{XLEFT}_{YBOTTOM}_normalised", file_date_safe)
+opt_output_files(ctg_classified) <- paste0("E:/Remote Sensing Media/",date_folder,"/06. Point Clouds Normalised IMPACT/", "IMPACT_Tile_{XLEFT}_{YBOTTOM}_normalised", file_date_safe)
 ctg_normalised <- normalize_height(las = ctg_classified, algorithm = tin())
 toc()
 
 # Rasterize plots ####
 
-ctg_normalised <- readLAScatalog(paste0("E:/Remote Sensing Media/",date_folder,"/06. Point Clouds Normalised"))
+ctg_normalised <- readLAScatalog(paste0("E:/Remote Sensing Media/",date_folder,"/06. Point Clouds Normalised IMPACT"))
 
-plan(multisession, workers = 6)
+plan(multisession, workers = 4)
 opt_independent_files(ctg_normalised) <- TRUE
 opt_select(ctg_normalised) <- "xyz"
-opt_filter(ctg_normalised) <- "-drop_class 2 -drop_z_below 0 -drop_z_above 30"
+opt_filter(ctg_normalised) <- "-drop_z_below 0 -drop_z_above 30"
 
 # Maintain chunking and buffers for rasterization
 opt_chunk_size(ctg_normalised) <- 200 
 opt_chunk_buffer(ctg_normalised) <- 10 
 
 tic()
-opt_output_files(ctg_normalised) <- paste0("E:/Remote Sensing Media/",date_folder,"/07. Canopy Height Models/", "IMPACT_Tile_{XLEFT}_{YBOTTOM}_chm", file_date_safe)
+opt_output_files(ctg_normalised) <- paste0("E:/Remote Sensing Media/",date_folder,"/07. Canopy Height Models IMPACT/", "IMPACT_Tile_{XLEFT}_{YBOTTOM}_chm", file_date_safe)
 ctg_chm <- rasterize_canopy(ctg_normalised,
                             res = 0.05,
                             algorithm = p2r(na.fill = tin()))
@@ -142,7 +142,7 @@ tic()
 
 # NEW: Since rasterize_canopy output multiple tif tiles to disk based on chunks,
 # we need to combine them virtually for exact_extract to read them as one continuous site.
-chm_files <- list.files(paste0("E:/Remote Sensing Media/",date_folder,"/07. Canopy Height Models/"), 
+chm_files <- list.files(paste0("E:/Remote Sensing Media/",date_folder,"/07. Canopy Height Models IMPACT/"), 
                         pattern = "\\.tif$", full.names = TRUE)
 site_chm_vrt <- terra::vrt(chm_files)
 
@@ -150,8 +150,8 @@ site_chm_vrt <- terra::vrt(chm_files)
 trees$Tree_Height <- exact_extract(site_chm_vrt, trees, 'max')
 
 # Save to shapefile
-st_write(trees, paste0("E:/Remote Sensing Media/",date_folder,"/09. Crown Metrics/Crown_Metrics_", file_date_safe, ".shp"), delete_dsn = TRUE)
+st_write(trees, paste0("E:/Remote Sensing Media/",date_folder,"/09. Crown Metrics IMPACT/Crown_Metrics_", file_date_safe, ".shp"), delete_dsn = TRUE)
 
 # Save lightweight CSV
-write.csv(st_drop_geometry(trees), paste0("E:/Remote Sensing Media/",date_folder,"/09. Crown Metrics/Crown_Metrics_", file_date_safe, ".csv"), row.names = FALSE)
+write.csv(st_drop_geometry(trees), paste0("E:/Remote Sensing Media/",date_folder,"/09. Crown Metrics IMPACT/Crown_Metrics_", file_date_safe, ".csv"), row.names = FALSE)
 toc()
