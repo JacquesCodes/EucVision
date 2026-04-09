@@ -14,7 +14,7 @@ library(exactextractr)
 # Read in all point clouds and shape files ####
 
 # Change this single variable for each new batch!
-date_folder <- "19. 16 March 2026"
+date_folder <- "21. 31 March 2026"
 
 # Extract the date part 
 file_date <- sub("^\\d+\\.\\s*", "", date_folder)

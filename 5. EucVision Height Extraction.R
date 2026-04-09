@@ -14,7 +14,7 @@ library(exactextractr)
 # Read in already processed Canopy height models ####
 
 # Change this single variable for each new batch!
-date_folder <- "16. 23 February 2026"
+date_folder <- "20. 23 March 2026"
 
 # Extract the date part for file naming
 file_date <- sub("^\\d+\\.\\s*", "", date_folder)
@@ -39,7 +39,7 @@ trees <- trees %>%
 ctg_chm <- rast(paste0("E:/Remote Sensing Media/", date_folder, "/07. Canopy Height Models/rasterize_canopy.vrt"))
 
 # Plot Canopy Height Models and tree shape files
-plot(ctg_chm, range = c(0, 6))
+plot(ctg_chm, range = c(0, 5))
 plot(trees$geometry, add = TRUE, col = "red")
 
 # Extract tree heights ####

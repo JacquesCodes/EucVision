@@ -14,7 +14,7 @@ library(ggspatial)
 library(tidyterra)
 
 # Change this single variable for each new batch!
-date_folder <- "17. 02 March 2026"
+date_folder <- "21. 31 March 2026"
 
 # Extract the date part by removing the leading folder number, dot, and space
 file_date <- sub("^\\d+\\.\\s*", "", date_folder)
@@ -26,7 +26,7 @@ file_date_safe <- gsub(" ", "_", file_date)
 myPath <- paste0("E:/Remote Sensing Media/",date_folder,"/")
 
 # Plot number
-Number <- 44
+Number <- 38
 
 # Dynamically construct the single-date file names
 name_clipped <- paste0("Plot_", Number, "_", file_date_safe)
@@ -73,10 +73,10 @@ if (file.exists(path_chm)) {
 # --- Plotting Section ---
 
 # Plot normalised las (Removed "axis = TRUE" to prevent the warning message!)
-# if (!is.null(las_normalised)) {
-#   plot(las_normalised, color = "RGB", size = 2, bg = "white")
-#   plot(las_normalised, size = 2, bg = "white")
-# }
+if (!is.null(las_normalised)) {
+  plot(las_normalised, color = "RGB", size = 2, bg = "white")
+  plot(las_normalised, size = 2, bg = "white")
+}
 
 # Only generate the map if the smoothed CHM was successfully created
 if (!is.null(smoothed_chm)) {
