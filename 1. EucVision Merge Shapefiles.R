@@ -4,7 +4,7 @@ library(dplyr)
 
 # === CONFIGURE PATHS ===
 # Change this single variable for each new batch!
-date_folder <- "20. 23 March 2026"
+date_folder <- "21. 31 March 2026"
 
 # Extract the date part by removing the leading folder number, dot, and space
 # This turns "17. 02 March 2026" into "02 March 2026"

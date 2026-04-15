@@ -1,0 +1,188 @@
+# Load necessary libraries
+library(terra)
+library(sf)
+library(magick)
+library(stringr)
+
+# --- MEMORY & STORAGE CONFIGURATION ---
+base_dir <- "E:/Remote Sensing Media"
+
+# Allocate memory aggressively but safely for 32GB RAM
+temp_dir <- file.path(base_dir, "terra_temp")
+dir.create(temp_dir, showWarnings = FALSE)
+terraOptions(memfrac = 0.75, tempdir = temp_dir)
+
+# --- INPUT CONFIGURATION ---
+shp_path <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. Templates/IMPACT Shapefiles Backup/Leaf litter plot.shp"
+plot_shp <- st_read(shp_path, quiet = TRUE)
+
+# Directory to save the temporary clipped PNGs and final outputs
+output_dir <- file.path(base_dir, "TimeLapse_Outputs")
+dir.create(output_dir, showWarnings = FALSE)
+
+# Color palette for the species outlines
+species_colors <- c(
+  "Cladocalyx"    = "#336998",
+  "Grandis"       = "#97dde3",
+  "Cloeziana"     = "#ffffff",
+  "Urophylla"     = "#e3acff",
+  "Grandis clone" = "#ff7da0"
+)
+
+# Get all dataset folders 
+folders <- list.dirs(base_dir, recursive = FALSE)
+exclude_list <- c("00. Dataset template", "000. Projects", "terra_temp", "01. 25 February 2025 (DJI Mavic)", "02. 01 September 2025 (DJI M300)","00. Baseline DTM and Plot Cropping","03. 30 October 2025")
+dataset_folders <- folders[grepl("^\\d{2}\\.", basename(folders)) & !basename(folders) %in% exclude_list]
+
+# List to store the paths of the generated images
+clipped_images <- c()
+
+print("Starting batch crop, overlay, and image generation...")
+
+# --- BATCH CROP LOOP ---
+for (folder_path in dataset_folders) {
+  
+  folder_name <- basename(folder_path)
+  date_str <- str_replace(folder_name, "^\\d{2}\\.\\s*", "")
+  ortho_dir <- file.path(folder_path, "01. Orthomosaics")
+  
+  # --- DYNAMIC CROWN POLYGON PATH ---
+  crown_dir <- file.path(folder_path, "08. Crown Polygons")
+  
+  # Search for any file ending in .shp in this specific week's folder
+  crown_shp_files <- list.files(crown_dir, pattern = "\\.shp$", full.names = TRUE, ignore.case = TRUE)
+  
+  # If a shapefile is found, assign it. If the folder is empty/missing, assign an empty string.
+  if (length(crown_shp_files) > 0) {
+    crown_shp_path <- crown_shp_files[1] 
+  } else {
+    crown_shp_path <- "" 
+  }
+  
+  if (!dir.exists(ortho_dir)) next
+  
+  all_tifs <- list.files(ortho_dir, pattern = "\\.tif$", full.names = TRUE, ignore.case = TRUE)
+  
+  # Filter OUT "Bottom" and "Cross Hatch" tifs
+  valid_tifs <- all_tifs[!grepl("Bottom|Cross Hatch", basename(all_tifs), ignore.case = TRUE)]
+  
+  if (length(valid_tifs) == 0) next
+  
+  for (tif_file in valid_tifs) {
+    print(paste("Processing:", basename(tif_file), "for date:", date_str))
+    
+    ortho <- rast(tif_file)
+    
+    # --- CRS & SOUTH AFRICAN AXIS FIX FOR PLOT SHAPE ---
+    plot_shp_proj <- plot_shp
+    
+    if (st_crs(plot_shp_proj) != st_crs(ortho)) {
+      plot_shp_proj <- suppressWarnings(st_transform(plot_shp_proj, st_crs(ortho)))
+    }
+    
+    rast_xmin <- ext(ortho)[1]
+    plot_xmin <- st_bbox(plot_shp_proj)[1]
+    
+    if (sign(rast_xmin) != sign(plot_xmin)) {
+      st_geometry(plot_shp_proj) <- st_geometry(plot_shp_proj) * -1
+      st_crs(plot_shp_proj) <- st_crs(ortho) 
+    }
+    
+    plot_vect_proj <- vect(plot_shp_proj)
+    
+    # --- CROPPING RASTER ---
+    cropped_raster <- tryCatch({
+      crop(ortho, plot_vect_proj)
+    }, error = function(e) {
+      NULL
+    })
+    
+    if (is.null(cropped_raster)) {
+      print("  -> Plot out of bounds. Skipping.")
+      next
+    }
+    
+    # --- PROCESS CROWN POLYGONS ---
+    crowns_cropped <- NULL
+    if (file.exists(crown_shp_path)) {
+      crowns <- st_read(crown_shp_path, quiet = TRUE)
+      
+      # 1. Match CRS
+      if (st_crs(crowns) != st_crs(ortho)) {
+        crowns <- suppressWarnings(st_transform(crowns, st_crs(ortho)))
+      }
+      
+      # 2. Check for SA Axis Flip
+      crown_xmin <- st_bbox(crowns)[1]
+      if (sign(rast_xmin) != sign(crown_xmin)) {
+        st_geometry(crowns) <- st_geometry(crowns) * -1
+        st_crs(crowns) <- st_crs(ortho)
+      }
+      
+      # 3. Intersect crowns with the plot boundary so we only draw what's visible
+      crowns_cropped <- suppressWarnings(st_intersection(crowns, plot_shp_proj))
+    } else {
+      print("  -> No crown polygons found for this date. Proceeding without overlay.")
+    }
+    
+    # --- EXPORT AS IMAGE FOR ANIMATION ---
+    out_png <- file.path(output_dir, paste0("Timelapse_", date_str, "_", basename(tif_file), ".png"))
+    
+    png(out_png, width = 3600, height = 1600, res = 300)
+    
+    # Crush all margins to 0 so the imagery fills the whole canvas
+    par(mar = c(0, 0, 0, 0)) 
+    
+    # Plot the RGB raster
+    plotRGB(cropped_raster, r = 1, g = 2, b = 3, stretch = "lin", axes = FALSE)
+    
+    # Overlay the polygons if they exist
+    if (!is.null(crowns_cropped) && nrow(crowns_cropped) > 0) {
+      # Map the colors to the Species column
+      border_colors <- species_colors[crowns_cropped$Species]
+      
+      # Plot only the borders (col = NA means transparent fill)
+      # lwd controls the line width/thickness
+      plot(st_geometry(crowns_cropped), add = TRUE, border = border_colors, col = NA, lwd = 3)
+    }
+    
+    dev.off()
+    
+    # --- ADD OUTLINED TITLE WITH MAGICK ---
+    img <- image_read(out_png)
+    img <- image_annotate(img, paste("Date:", date_str), 
+                          gravity = "north", location = "+0+50", 
+                          size = 120, weight = 700, 
+                          color = "black", 
+                          strokecolor = "white",
+                          strokewidth = 3)
+    image_write(img, out_png)
+    
+    clipped_images <- c(clipped_images, out_png)
+    
+    # Cleanup memory
+    rm(ortho, cropped_raster, crowns_cropped)
+    gc()
+  }
+}
+
+print("Cropping and overlays complete! Generating time-lapse...")
+
+library(av)
+
+# --- AV: HIGH-RES MP4 ANIMATION ---
+if (length(clipped_images) > 0) {
+  
+  video_path <- file.path(output_dir, "Timelapse.mp4")
+  
+  av_encode_video(clipped_images, output = video_path, framerate = 1)
+  
+  print(paste("High-Res Time-lapse video saved to:", video_path))
+  
+} else {
+  print("No overlapping images found to animate.")
+}
+
+# Clean up temporary directory
+unlink(temp_dir, recursive = TRUE)
+print("All tasks complete!")

@@ -12,7 +12,7 @@ library(terra)
 library(exactextractr)
 
 # Change this single variable for each new batch!
-date_folder <- "22. 08 April 2026"
+date_folder <- "19. 16 March 2026"
 
 # Read in all point clouds and shape files ####
 
@@ -24,25 +24,30 @@ file_date <- sub("^\\d+\\.\\s*", "", date_folder)
 # This turns "02 March 2026" into "02_March_2026"
 file_date_safe <- gsub(" ", "_", file_date)
 
-# Read in point clouds into a catalog (ctg)
-ctg <- readLAScatalog(paste0("E:/Remote Sensing Media/",date_folder,"/03. Point Clouds"))
-
 # Read in shape files for individual plot boundaries
 plots_buffered_unsorted <- st_read(paste0("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. Templates/EucVision LidR Boundaries/EucVision LidR Boundaries.shp"))
 plots <- plots_buffered_unsorted[order(plots_buffered_unsorted$id), ]
 
-# # Read in tree shape files for height extraction ####
-# trees <- st_read(paste0("E:/Remote Sensing Media/", date_folder, "/08. Crown Polygons/Crown_Polygons_", file_date_safe, ".shp"))
-# 
-# # Automatically check and transform to EPSG: 2048 if it doesn't match
-# if (is.na(st_crs(trees)$epsg) || st_crs(trees)$epsg != 2048) {
-#   trees <- st_transform(trees, 2048)
-#   print("Transformed CRS to 2048 successfully.")
-# }
-# 
-# trees <- trees %>%
-#   select(-any_of(c("group_ulid", "N_GM", "id", "N_FG", "N_BG", "BBox")))
-# 
+# --- BATCH PROCESSING & CATALOG SETUP ---
+las_folder <- paste0("E:/Remote Sensing Media/", date_folder, "/03. Point Clouds")
+all_las_files <- list.files(las_folder, pattern = "\\.(las|laz)$", full.names = TRUE, ignore.case = TRUE)
+
+# Identify Top and Bottom files based on filenames
+top_files <- all_las_files[grepl("Top", basename(all_las_files), ignore.case = TRUE)]
+bot_files <- all_las_files[grepl("Bottom", basename(all_las_files), ignore.case = TRUE)]
+
+# Read in tree shape files for height extraction ####
+trees <- st_read(paste0("E:/Remote Sensing Media/", date_folder, "/08. Crown Polygons/Crown_Polygons_", file_date_safe, ".shp"))
+
+# Automatically check and transform to EPSG: 2048 if it doesn't match
+if (is.na(st_crs(trees)$epsg) || st_crs(trees)$epsg != 2048) {
+  trees <- st_transform(trees, 2048)
+  print("Transformed CRS to 2048 successfully.")
+}
+
+trees <- trees %>%
+  select(-any_of(c("group_ulid", "N_GM", "id", "N_FG", "N_BG", "BBox")))
+
 # # View catalog, plots and trees
 # plot(ctg)
 # plot(plots$geometry,add = TRUE)
@@ -52,17 +57,56 @@ plots <- plots_buffered_unsorted[order(plots_buffered_unsorted$id), ]
 
 # Multiple CPU threads mode
 plan(multisession)
-# .las files overlaps and are dependent
-opt_independent_files(ctg) <- FALSE
-# Only load needed variables into memory
-opt_select(ctg) <- "xyz"
 
 # tic() & toc() is to check code running time
 tic()
-# Write to disk rather than memory:
-opt_output_files(ctg) <- paste0("E:/Remote Sensing Media/",date_folder,"/04. Point Clouds Clipped/", "Plot_{ID}_", file_date_safe)
-# Crop plots
-ctg_clipped <- clip_roi(ctg, plots)
+
+# Check if we need to split processing based on Top/Bottom files
+if (length(top_files) > 0 && length(bot_files) > 0) {
+  print("Top and Bottom point clouds detected. Splitting processing by Plot ID...")
+  
+  # Split plot boundaries by ID
+  plots_top <- plots %>% filter(id <= 21)
+  plots_bot <- plots %>% filter(id >= 22)
+  
+  # Read into separate catalogs
+  ctg_top <- readLAScatalog(top_files)
+  ctg_bot <- readLAScatalog(bot_files)
+  
+  # Configure engine settings for TOP
+  opt_independent_files(ctg_top) <- FALSE
+  opt_select(ctg_top) <- "xyz"
+  # Note: using {id} instead of {ID} to match your dataframe's column name casing
+  opt_output_files(ctg_top) <- paste0("E:/Remote Sensing Media/", date_folder, "/04. Point Clouds Clipped/", "Plot_{id}_", file_date_safe)
+  
+  # Configure engine settings for BOTTOM
+  opt_independent_files(ctg_bot) <- FALSE
+  opt_select(ctg_bot) <- "xyz"
+  opt_output_files(ctg_bot) <- paste0("E:/Remote Sensing Media/", date_folder, "/04. Point Clouds Clipped/", "Plot_{id}_", file_date_safe)
+  
+  # Crop catalogs separately
+  print("Cropping Top plots (1-21)...")
+  ctg_clipped_top <- clip_roi(ctg_top, plots_top)
+  
+  print("Cropping Bottom plots (22-75)...")
+  ctg_clipped_bot <- clip_roi(ctg_bot, plots_bot)
+  
+  # Re-read the entire clipped directory as a single catalog for downstream steps
+  ctg_clipped <- readLAScatalog(paste0("E:/Remote Sensing Media/", date_folder, "/04. Point Clouds Clipped"))
+  
+} else {
+  print("Single point cloud or no Top/Bottom distinction detected. Processing entirely...")
+  
+  # Normal processing for a single or unstructured catalog
+  ctg <- readLAScatalog(las_folder)
+  opt_independent_files(ctg) <- FALSE
+  opt_select(ctg) <- "xyz"
+  opt_output_files(ctg) <- paste0("E:/Remote Sensing Media/", date_folder, "/04. Point Clouds Clipped/", "Plot_{id}_", file_date_safe)
+  
+  # Crop plots
+  ctg_clipped <- clip_roi(ctg, plots)
+}
+
 toc()
 
 # Classify plots ####

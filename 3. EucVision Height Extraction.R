@@ -14,7 +14,7 @@ library(exactextractr)
 # Read in already processed Canopy height models ####
 
 # Change this single variable for each new batch!
-date_folder <- "20. 23 March 2026"
+date_folder <- "21. 31 March 2026"
 
 # Extract the date part for file naming
 file_date <- sub("^\\d+\\.\\s*", "", date_folder)
@@ -38,17 +38,31 @@ trees <- trees %>%
 # Keeping the .vrt reference as requested
 ctg_chm <- rast(paste0("E:/Remote Sensing Media/", date_folder, "/07. Canopy Height Models/rasterize_canopy.vrt"))
 
-# Plot Canopy Height Models and tree shape files
-plot(ctg_chm, range = c(0, 5))
-plot(trees$geometry, add = TRUE, col = "red")
+# 3. Define the color palette based on your species
+species_colors <- c(
+  "Cladocalyx"    = "#336998",
+  "Grandis"       = "#97dde3",
+  "Cloeziana"     = "#ffffff",
+  "Urophylla"     = "#e3acff",
+  "Grandis clone" = "#ff7da0"
+)
+
+# 4. Plot the Canopy Height Model
+plot(ctg_chm, range = c(0, 5), main = "Canopy Height Model with Tree Species")
+
+# 5. Plot the tree shapefiles overlaid, mapping the 'Species' column to the colors
+# Note: 'border = "black"' adds a black outline so the white polygons don't blend in
+plot(trees$geometry, 
+     add = TRUE, 
+     col = species_colors[trees$Species])
 
 # Extract tree heights ####
 
 tic()
-# Calculate metrics using exact_extract (Outputs directly as a vector)
+# 6. Calculate metrics using exact_extract (Outputs directly as a vector)
 trees$Tree_Height <- exact_extract(ctg_chm, trees, 'max')
 
-# 3. Save to Crown Metrics (Updated folder and file name)
+# 7.Save to Crown Metrics (Updated folder and file name)
 output_path_shp <- paste0("E:/Remote Sensing Media/", date_folder, "/09. Crown Metrics/Crown_Metrics_", file_date_safe, ".shp")
 output_path_csv <- paste0("E:/Remote Sensing Media/", date_folder, "/09. Crown Metrics/Crown_Metrics_", file_date_safe, ".csv")
 
