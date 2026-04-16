@@ -91,4 +91,4 @@ combined_sf <- bind_cols(csv_data, combined_sf) %>% st_as_sf()
 st_write(combined_sf, output_shp, append = FALSE)
 st_write(combined_sf, base_output_file, append = FALSE)
 
-cat("✅ All done. CSV attached. Merged shapefile successfully saved to:\n", output_shp, "\n")
+cat("✅ All done. CSV attached. Merged shapefile successfully saved to:\n", output_shp, "\n")2

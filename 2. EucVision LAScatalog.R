@@ -25,7 +25,7 @@ file_date <- sub("^\\d+\\.\\s*", "", date_folder)
 file_date_safe <- gsub(" ", "_", file_date)
 
 # Read in shape files for individual plot boundaries
-plots_buffered_unsorted <- st_read(paste0("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. Templates/EucVision LidR Boundaries/EucVision LidR Boundaries.shp"))
+plots_buffered_unsorted <- st_read(paste0("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. Templates/EucVision LAScatalog Boundaries/LAScatalog Plot Boundaries.shp"))
 plots <- plots_buffered_unsorted[order(plots_buffered_unsorted$id), ]
 
 # --- BATCH PROCESSING & CATALOG SETUP ---

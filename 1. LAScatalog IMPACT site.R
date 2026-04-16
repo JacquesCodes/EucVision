@@ -11,23 +11,44 @@ library(sp)
 library(terra)
 library(exactextractr)
 
-# Read in all point clouds and shape files ####
-
 # Change this single variable for each new batch!
-date_folder <- "21. 31 March 2026"
+date_folder <- "22. 08 April 2026"
+
+# Read in all point clouds and shape files ####
 
 # Extract the date part 
 file_date <- sub("^\\d+\\.\\s*", "", date_folder)
 file_date_safe <- gsub(" ", "_", file_date)
 
-# Read in point clouds into a catalog (ctg)
-ctg <- readLAScatalog(paste0("E:/Remote Sensing Media/",date_folder,"/03. Point Clouds"))
+# --- CREATE MISSING IMPACT DIRECTORIES ---
+# List all the required output directories for the IMPACT workflow
+impact_dirs <- c(
+  paste0("E:/Remote Sensing Media/", date_folder, "/04. Point Clouds Clipped IMPACT"),
+  paste0("E:/Remote Sensing Media/", date_folder, "/05. Point Clouds Ground Classified IMPACT"),
+  paste0("E:/Remote Sensing Media/", date_folder, "/06. Point Clouds Normalised IMPACT"),
+  paste0("E:/Remote Sensing Media/", date_folder, "/07. Canopy Height Models IMPACT"),
+  paste0("E:/Remote Sensing Media/", date_folder, "/09. Crown Metrics IMPACT")
+)
 
-# Read in shape files for individual plot boundaries
-plots_buffered_unsorted <- st_read(paste0("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. Templates/EucVision LidR Boundaries/EucVision LidR Boundaries.shp"))
-plots <- plots_buffered_unsorted[order(plots_buffered_unsorted$id), ]
+# Loop through the list and create any folders that do not exist
+for (dir in impact_dirs) {
+  if (!dir.exists(dir)) {
+    dir.create(dir, recursive = TRUE)
+    cat("Created missing directory:", dir, "\n")
+  }
+}
 
-IMPACT_Boundaries <- st_read("E:/Remote Sensing Media/00. Baseline DTM and Plot Cropping/Impact Boundaries.shp")
+# --- BATCH PROCESSING SETUP ---
+las_folder <- paste0("E:/Remote Sensing Media/", date_folder, "/03. Point Clouds")
+all_las_files <- list.files(las_folder, pattern = "\\.(las|laz)$", full.names = TRUE, ignore.case = TRUE)
+
+# Identify Top and Bottom files based on filenames
+top_files <- all_las_files[grepl("Top", basename(all_las_files), ignore.case = TRUE)]
+bot_files <- all_las_files[grepl("Bottom", basename(all_las_files), ignore.case = TRUE)]
+
+# Read in shape files for Top and Bottom cropping
+IMPACT_Top <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. Templates/EucVision LAScatalog Boundaries/Top IMPACT Boundaries.shp")
+IMPACT_Bottom <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. Templates/EucVision LAScatalog Boundaries/Bottom IMPACT Boundaries.shp")
 
 # Read in tree shape files for height extraction
 trees <- st_read(paste0("E:/Remote Sensing Media/", date_folder, "/08. Crown Polygons/Crown_Polygons_", file_date_safe, ".shp"))
@@ -44,13 +65,40 @@ trees <- trees %>%
 # Crop IMPACT site ####
 
 plan(multisession)
-opt_independent_files(ctg) <- FALSE
-opt_select(ctg) <- "xyz"
 
 tic()
-# Changed output naming since it's likely a single boundary polygon now, not 75 plots with IDs
-opt_output_files(ctg) <- paste0("E:/Remote Sensing Media/",date_folder,"/04. Point Clouds Clipped IMPACT/IMPACT_Site_", file_date_safe)
-ctg_clipped <- clip_roi(ctg, IMPACT_Boundaries)
+
+if (length(top_files) > 0 && length(bot_files) > 0) {
+  print("Top and Bottom point clouds detected. Cropping separately...")
+  
+  # Read into separate catalogs
+  ctg_top <- readLAScatalog(top_files)
+  ctg_bot <- readLAScatalog(bot_files)
+  
+  # Configure engine settings for TOP
+  opt_independent_files(ctg_top) <- FALSE
+  opt_select(ctg_top) <- "xyz"
+  opt_output_files(ctg_top) <- paste0("E:/Remote Sensing Media/",date_folder,"/04. Point Clouds Clipped IMPACT/IMPACT_Site_Top_", file_date_safe)
+  
+  # Configure engine settings for BOTTOM
+  opt_independent_files(ctg_bot) <- FALSE
+  opt_select(ctg_bot) <- "xyz"
+  opt_output_files(ctg_bot) <- paste0("E:/Remote Sensing Media/",date_folder,"/04. Point Clouds Clipped IMPACT/IMPACT_Site_Bottom_", file_date_safe)
+  
+  # Crop catalogs separately
+  print("Cropping Top IMPACT Boundary...")
+  ctg_clipped_top <- clip_roi(ctg_top, IMPACT_Top)
+  
+  print("Cropping Bottom IMPACT Boundary...")
+  ctg_clipped_bot <- clip_roi(ctg_bot, IMPACT_Bottom)
+  
+  # Re-read the entire clipped directory as a single catalog for downstream steps
+  ctg_clipped <- readLAScatalog(paste0("E:/Remote Sensing Media/", date_folder, "/04. Point Clouds Clipped IMPACT"))
+  
+} else {
+  print("Single point cloud or no Top/Bottom distinction detected. Make sure your files contain 'Top' and 'Bottom' in the names.")
+}
+
 toc()
 
 # Classify plots ####
@@ -136,18 +184,28 @@ ctg_chm <- rasterize_canopy(ctg_normalised,
 print("Rasterize canopy time:")
 toc()
 
-# Extract tree heights ####
+# Combine Canopy Height Models Tiffs and Extract tree heights ####
 
 tic()
 
-# NEW: Since rasterize_canopy output multiple tif tiles to disk based on chunks,
+# Since rasterize_canopy output multiple tif tiles to disk based on chunks,
 # we need to combine them virtually for exact_extract to read them as one continuous site.
 chm_files <- list.files(paste0("E:/Remote Sensing Media/",date_folder,"/07. Canopy Height Models IMPACT/"), 
                         pattern = "\\.tif$", full.names = TRUE)
 site_chm_vrt <- terra::vrt(chm_files)
 
-# Calculate metrics using exact_extract against the virtual raster
-trees$Tree_Height <- exact_extract(site_chm_vrt, trees, 'max')
+# Write the virtual raster out to a single physical .tif file
+single_chm_path <- paste0("E:/Remote Sensing Media/",date_folder,"/07. Canopy Height Models IMPACT/IMPACT_Site_CHM_Single_", file_date_safe, ".tif")
+terra::writeRaster(site_chm_vrt, filename = single_chm_path, overwrite = TRUE)
+
+# Optional: Delete the individual chunk tiles to save disk space
+file.remove(chm_files)
+
+# Re-read the single physical file for your extraction (replaces the VRT in memory)
+site_chm_single <- terra::rast(single_chm_path)
+
+# Calculate metrics using exact_extract against the NEW single continuous raster
+trees$Tree_Height <- exact_extract(site_chm_single, trees, 'max')
 
 # Save to shapefile
 st_write(trees, paste0("E:/Remote Sensing Media/",date_folder,"/09. Crown Metrics IMPACT/Crown_Metrics_", file_date_safe, ".shp"), delete_dsn = TRUE)
