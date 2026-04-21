@@ -1,27 +1,41 @@
-# 1. Install missing packages if necessary
+# ──────────────────────────────────────────────────────────────────────────────
+# EUCVISION: DATA EXTRACTION, MERGING, & CLEANING PIPELINE ####
+# ──────────────────────────────────────────────────────────────────────────────
+# Author: Jacques Vermeulen
+# Email: Jacques.Stellies@gmail.com
+# Project: EucXylo (https://eucxylo.sun.ac.za/)
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 1. Setup and Imports ####
+# ──────────────────────────────────────────────────────────────────────────────
+# Install missing packages if necessary
 if (!require("dplyr")) install.packages("dplyr")
 if (!require("readr")) install.packages("readr")
 if (!require("stringr")) install.packages("stringr")
 
+# Load required libraries for data manipulation and string parsing
 library(dplyr)
 library(readr)
 library(stringr)
 
-# Force R to use English for date parsing
+# Force R to use English for date parsing to prevent locale-specific errors
 Sys.setlocale("LC_TIME", "C")
 
-# =====================================================================
-# 1. DEFINE DIRECTORIES
-# =====================================================================
+# ──────────────────────────────────────────────────────────────────────────────
+# 2. Configuration & Path Management ####
+# ──────────────────────────────────────────────────────────────────────────────
+# Define base source and backup directories
 src_base_dir <- "E:/Remote Sensing Media"
 dest_backup_dir <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/05. Crown Metrics"
 
+# Define dataset specific paths
 dest_master_csv <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data analysis/01. Main dataset CSV.csv"
 other_dataset_csv <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data analysis/01. Other dataset.csv"
 
-# =====================================================================
-# 2. RUN SCRIPT & EXTRACT UAV DATA
-# =====================================================================
+# ──────────────────────────────────────────────────────────────────────────────
+# 3. Run Script & Extract UAV Data ####
+# ──────────────────────────────────────────────────────────────────────────────
 main_folders <- list.dirs(src_base_dir, recursive = FALSE)
 csv_list <- list()
 
@@ -30,6 +44,7 @@ cat("\n--- Starting Teams backup and data extraction ---\n")
 for (folder in main_folders) {
   folder_name <- basename(folder)
   
+  # Extract and format the date from the folder name
   date_match <- str_extract(folder_name, "\\d{2} [A-Za-z]+ \\d{4}")
   formatted_date <- NA
   if (!is.na(date_match)) {
@@ -39,6 +54,7 @@ for (folder in main_folders) {
   
   crown_metrics_path <- file.path(folder, "09. Crown Metrics")
   
+  # Process folder if the Crown Metrics directory exists
   if (dir.exists(crown_metrics_path)) {
     files_to_copy <- list.files(crown_metrics_path, 
                                 pattern = "\\.(shp|shx|dbf|prj|csv)$", 
@@ -49,14 +65,16 @@ for (folder in main_folders) {
       current_dest_dir <- file.path(dest_backup_dir, folder_name)
       if (!dir.exists(current_dest_dir)) dir.create(current_dest_dir, recursive = TRUE)
       
+      # Copy files to the backup directory
       file.copy(from = files_to_copy, to = current_dest_dir, overwrite = TRUE)
       
+      # Identify the CSV file for data extraction
       csv_file <- files_to_copy[grepl("\\.csv$", files_to_copy, ignore.case = TRUE)]
       
       if (length(csv_file) == 1) {
         temp_df <- read_csv(csv_file, show_col_types = FALSE)
         
-        # Clean Columns
+        # --- Clean Columns ---
         if ("Cmprtmn" %in% names(temp_df)) temp_df <- rename(temp_df, Compartment = Cmprtmn)
         
         if ("Area_m2" %in% names(temp_df) && !"Area" %in% names(temp_df)) {
@@ -69,6 +87,7 @@ for (folder in main_folders) {
         
         temp_df$Date <- formatted_date
         
+        # Keep only essential columns
         cols_to_keep <- c("Compartment", "Line", "Plot", "Culture", "Spacing", 
                           "Species", "Tree", "Date", "Crown_Area", "Tree_Height")
         temp_df <- select(temp_df, any_of(cols_to_keep))
@@ -80,9 +99,9 @@ for (folder in main_folders) {
   }
 }
 
-# =====================================================================
-# 3. MERGE, FULL JOIN EXTERNAL DATA, & DYNAMIC CLEANING
-# =====================================================================
+# ──────────────────────────────────────────────────────────────────────────────
+# 4. Merge, Full Join External Data, & Dynamic Cleaning ####
+# ──────────────────────────────────────────────────────────────────────────────
 if (length(csv_list) > 0) {
   cat("\nMerging UAV CSV files...\n")
   master_dataset <- bind_rows(csv_list)
@@ -91,7 +110,7 @@ if (length(csv_list) > 0) {
     cat("Found '01. Other dataset.csv'. Running FULL JOIN...\n")
     other_data <- read_csv(other_dataset_csv, show_col_types = FALSE)
     
-    # Safely rename columns in the other dataset to prevent .x and .y duplicates
+    # Safely rename columns in the external dataset to prevent .x and .y duplicates
     if ("Tree_Height" %in% names(other_data)) {
       other_data <- other_data %>% rename(Tree_Height_other = Tree_Height)
     }
@@ -102,7 +121,7 @@ if (length(csv_list) > 0) {
     master_dataset <- master_dataset %>%
       full_join(other_data, by = c("Compartment", "Line", "Plot", "Culture", "Spacing", "Species", "Tree", "Date"))
     
-    # Neatly merge the Photo/Other heights into the main Tree_Height column
+    # Neatly merge the external heights into the main Tree_Height column
     if ("Tree_Height_other" %in% names(master_dataset)) {
       master_dataset <- suppressWarnings(
         master_dataset %>%
@@ -115,7 +134,7 @@ if (length(csv_list) > 0) {
       )
     }
     
-    # Neatly merge the manual Crown_Area if it exists
+    # Neatly merge the external Crown_Area if it exists
     if ("Crown_Area_other" %in% names(master_dataset)) {
       master_dataset <- suppressWarnings(
         master_dataset %>%
@@ -129,7 +148,9 @@ if (length(csv_list) > 0) {
     }
   }
   
-  # --- OUTLIER CLEANING & DATA TYPE FIXING ---
+  # ────────────────────────────────────────────────────────────────────────────
+  # 5. Outlier Filtering & Data Type Standardization ####
+  # ────────────────────────────────────────────────────────────────────────────
   cat("Cleaning outliers and standardizing numeric formats...\n")
   
   master_dataset <- suppressWarnings(
@@ -142,7 +163,7 @@ if (length(csv_list) > 0) {
       )
   )
   
-  # 2. DYNAMIC OUTLIER FILTERING
+  # Dynamic Outlier Filtering: Remove anomalous spikes based on flight distributions
   master_dataset <- master_dataset %>%
     group_by(Date) %>%
     mutate(
@@ -152,7 +173,9 @@ if (length(csv_list) > 0) {
     select(-Flight_99th) %>% 
     ungroup() 
   
-  # --- CHRONOLOGICAL & SPATIAL SORTING ---
+  # ────────────────────────────────────────────────────────────────────────────
+  # 6. Chronological & Spatial Sorting & Export ####
+  # ────────────────────────────────────────────────────────────────────────────
   cat("Organizing dataset chronologically...\n")
   master_dataset <- master_dataset %>%
     mutate(Temp_Date = as.Date(Date, format="%d-%b-%y")) %>%
