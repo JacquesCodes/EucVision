@@ -13,8 +13,11 @@ dir.create(temp_dir, showWarnings = FALSE)
 terraOptions(memfrac = 0.75, tempdir = temp_dir)
 
 # --- INPUT CONFIGURATION ---
-shp_path <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. Templates/IMPACT Shapefiles Backup/Leaf litter plot.shp"
+# shp_path <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. Templates/IMPACT Shapefiles Backup/Leaf litter plot.shp"
+shp_path <- "E:/Remote Sensing Media/000. Projects/0. Plot boundaries for cropping/Plot_37.shp"
 plot_shp <- st_read(shp_path, quiet = TRUE)
+
+# IF NO CROPPING HAPPENS - CHECK TOP AND BOTTOM FILTER
 
 # Directory to save the temporary clipped PNGs and final outputs
 output_dir <- file.path(base_dir, "TimeLapse_Outputs")
@@ -31,7 +34,14 @@ species_colors <- c(
 
 # Get all dataset folders 
 folders <- list.dirs(base_dir, recursive = FALSE)
-exclude_list <- c("00. Dataset template", "000. Projects", "terra_temp", "01. 25 February 2025 (DJI Mavic)", "02. 01 September 2025 (DJI M300)","00. Baseline DTM and Plot Cropping","03. 30 October 2025")
+exclude_list <- c("00. Dataset template", 
+                  "000. Projects", "terra_temp", 
+                  "01. 25 February 2025 (DJI Mavic)", 
+                  "02. 01 September 2025 (DJI M300)",
+                  "00. Baseline DTM and Plot Cropping",
+                  "03. 30 October 2025",
+                  "17. 03 March 2026 (Multispectral)",
+                  "20. 24 March 2026 (Multispectral)")
 dataset_folders <- folders[grepl("^\\d{2}\\.", basename(folders)) & !basename(folders) %in% exclude_list]
 
 # List to store the paths of the generated images
@@ -63,8 +73,8 @@ for (folder_path in dataset_folders) {
   
   all_tifs <- list.files(ortho_dir, pattern = "\\.tif$", full.names = TRUE, ignore.case = TRUE)
   
-  # Filter OUT "Bottom" and "Cross Hatch" tifs
-  valid_tifs <- all_tifs[!grepl("Bottom|Cross Hatch", basename(all_tifs), ignore.case = TRUE)]
+  # Filter OUT "Top" and "Cross Hatch" tifs
+  valid_tifs <- all_tifs[!grepl("Top|Cross Hatch", basename(all_tifs), ignore.case = TRUE)]
   
   if (length(valid_tifs) == 0) next
   
