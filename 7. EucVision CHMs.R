@@ -30,10 +30,10 @@ library(tidyterra)
 # ──────────────────────────────────────────────────────────────────────────────
 # === CONFIGURE BATCH AND PLOT ===
 # Change this single variable for each new batch!
-date_folder <- "23. 13 April 2026"
+date_folder <- "04. 07 November 2025"
 
 # Define the specific plot number to visualize
-Number <- 38
+Number <- 37
 
 # Extract the date part and create a safe filename format
 # (e.g., "17. 02 March 2026" -> "02_March_2026")

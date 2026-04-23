@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# EUCVISION: LiDAR POINT CLOUD PROCESSING & CANOPY HEIGHT EXTRACTION PIPELINE ####
+# EUCVISION: PLOT-LEVEL LiDAR POINT CLOUD PROCESSING PIPELINE USING DTM ####
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
 # Email: Jacques.Stellies@gmail.com
@@ -28,45 +28,27 @@ library(exactextractr)
 # ──────────────────────────────────────────────────────────────────────────────
 # === CONFIGURE PATHS ===
 # Change this single variable for each new batch!
-date_folder <- "22. 08 April 2026"
+date_folder <- "07. 28 November 2025 DTM"
 
 # Extract the date part and create a safe filename format
 # (e.g., "17. 02 March 2026" -> "02_March_2026")
 file_date <- sub("^\\d+\\.\\s*", "", date_folder)
 file_date_safe <- gsub(" ", "_", file_date)
 
-# --- CREATE MISSING IMPACT DIRECTORIES ---
-# Define all required output directories for the IMPACT workflow
-impact_dirs <- c(
-  paste0("E:/Remote Sensing Media/", date_folder, "/04. Point Clouds Clipped IMPACT"),
-  paste0("E:/Remote Sensing Media/", date_folder, "/05. Point Clouds Ground Classified IMPACT"),
-  paste0("E:/Remote Sensing Media/", date_folder, "/06. Point Clouds Normalised IMPACT"),
-  paste0("E:/Remote Sensing Media/", date_folder, "/07. Canopy Height Models IMPACT"),
-  paste0("E:/Remote Sensing Media/", date_folder, "/09. Crown Metrics IMPACT")
-)
-
-# Loop through and create any directories that do not already exist
-for (dir in impact_dirs) {
-  if (!dir.exists(dir)) {
-    dir.create(dir, recursive = TRUE)
-    cat("Created missing directory:", dir, "\n")
-  }
-}
-
 # ──────────────────────────────────────────────────────────────────────────────
 # 3. Spatial Data Loading & Boundary Definition ####
 # ──────────────────────────────────────────────────────────────────────────────
-# --- BATCH PROCESSING SETUP ---
+# Load individual plot boundary shapefiles and sort them chronologically/spatially by ID
+plots_buffered_unsorted <- st_read(paste0("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. Templates/EucVision LAScatalog Boundaries/LAScatalog Plot Boundaries.shp"))
+plots <- plots_buffered_unsorted[order(plots_buffered_unsorted$id), ]
+
+# --- BATCH PROCESSING & CATALOG SETUP ---
 las_folder <- paste0("E:/Remote Sensing Media/", date_folder, "/03. Point Clouds")
 all_las_files <- list.files(las_folder, pattern = "\\.(las|laz)$", full.names = TRUE, ignore.case = TRUE)
 
 # Identify Top and Bottom point cloud files based on filenames
 top_files <- all_las_files[grepl("Top", basename(all_las_files), ignore.case = TRUE)]
 bot_files <- all_las_files[grepl("Bottom", basename(all_las_files), ignore.case = TRUE)]
-
-# Load boundary shapefiles for clipping the Top and Bottom point clouds
-IMPACT_Top <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. Templates/EucVision LAScatalog Boundaries/Top IMPACT Boundaries.shp")
-IMPACT_Bottom <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. Templates/EucVision LAScatalog Boundaries/Bottom IMPACT Boundaries.shp")
 
 # Load individual tree crown polygons for final height extraction
 trees <- st_read(paste0("E:/Remote Sensing Media/", date_folder, "/08. Crown Polygons/Crown_Polygons_", file_date_safe, ".shp"))
@@ -81,14 +63,24 @@ if (is.na(st_crs(trees)$epsg) || st_crs(trees)$epsg != 2048) {
 trees <- trees %>%
   select(-any_of(c("group_ulid", "N_GM", "id", "N_FG", "N_BG", "BBox")))
 
+# Optional Debugging Visualization (Uncomment if needed)
+# plot(ctg)
+# plot(plots$geometry, add = TRUE)
+# plot(trees$geometry, add = TRUE, col = "red")
+
 # ──────────────────────────────────────────────────────────────────────────────
-# 4. Point Cloud Clipping (IMPACT Site) ####
+# 4. Point Cloud Cropping (Plot Level) ####
 # ──────────────────────────────────────────────────────────────────────────────
 plan(multisession) # Enable parallel processing
-tic()
+tic()              # Track execution time
 
+# Check if we need to split processing based on Top/Bottom files
 if (length(top_files) > 0 && length(bot_files) > 0) {
-  print("Top and Bottom point clouds detected. Cropping separately...")
+  print("Top and Bottom point clouds detected. Splitting processing by Plot ID...")
+  
+  # Split plot boundaries by ID to align with the physical flight paths
+  plots_top <- plots %>% filter(id <= 21)
+  plots_bot <- plots %>% filter(id >= 22)
   
   # Initialize separate LiDAR catalogs
   ctg_top <- readLAScatalog(top_files)
@@ -97,121 +89,89 @@ if (length(top_files) > 0 && length(bot_files) > 0) {
   # Configure engine settings for TOP cropping
   opt_independent_files(ctg_top) <- FALSE
   opt_select(ctg_top) <- "xyz"
-  opt_output_files(ctg_top) <- paste0("E:/Remote Sensing Media/",date_folder,"/04. Point Clouds Clipped IMPACT/IMPACT_Site_Top_", file_date_safe)
+  # Note: using {id} instead of {ID} to match the dataframe's column name casing
+  opt_output_files(ctg_top) <- paste0("E:/Remote Sensing Media/", date_folder, "/04. Point Clouds Clipped/", "Plot_{id}_", file_date_safe)
   
   # Configure engine settings for BOTTOM cropping
   opt_independent_files(ctg_bot) <- FALSE
   opt_select(ctg_bot) <- "xyz"
-  opt_output_files(ctg_bot) <- paste0("E:/Remote Sensing Media/",date_folder,"/04. Point Clouds Clipped IMPACT/IMPACT_Site_Bottom_", file_date_safe)
+  opt_output_files(ctg_bot) <- paste0("E:/Remote Sensing Media/", date_folder, "/04. Point Clouds Clipped/", "Plot_{id}_", file_date_safe)
   
   # Execute spatial clipping operations
-  print("Cropping Top IMPACT Boundary...")
-  ctg_clipped_top <- clip_roi(ctg_top, IMPACT_Top)
+  print("Cropping Top plots (1-21)...")
+  ctg_clipped_top <- clip_roi(ctg_top, plots_top)
   
-  print("Cropping Bottom IMPACT Boundary...")
-  ctg_clipped_bot <- clip_roi(ctg_bot, IMPACT_Bottom)
+  print("Cropping Bottom plots (22-75)...")
+  ctg_clipped_bot <- clip_roi(ctg_bot, plots_bot)
   
   # Re-read the fully clipped directory as a single unified catalog for downstream processing
-  ctg_clipped <- readLAScatalog(paste0("E:/Remote Sensing Media/", date_folder, "/04. Point Clouds Clipped IMPACT"))
+  ctg_clipped <- readLAScatalog(paste0("E:/Remote Sensing Media/", date_folder, "/04. Point Clouds Clipped"))
   
 } else {
-  print("Single point cloud or no Top/Bottom distinction detected. Make sure your files contain 'Top' and 'Bottom' in the names.")
+  print("Single point cloud or no Top/Bottom distinction detected. Processing entirely...")
+  
+  # Standard processing for a single or unstructured catalog
+  ctg <- readLAScatalog(las_folder)
+  opt_independent_files(ctg) <- FALSE
+  opt_select(ctg) <- "xyz"
+  opt_output_files(ctg) <- paste0("E:/Remote Sensing Media/", date_folder, "/04. Point Clouds Clipped/", "Plot_{id}_", file_date_safe)
+  
+  # Execute spatial clipping operations
+  ctg_clipped <- clip_roi(ctg, plots)
 }
 
 toc()
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 5. Ground Classification ####
-# ──────────────────────────────────────────────────────────────────────────────
-plan(multisession, workers = 6) # Scale up to 6 workers for heavy processing
-opt_independent_files(ctg_clipped) <- TRUE
-opt_select(ctg_clipped) <- "xyz"
-
-# CRITICAL FOR WHOLE SITE PROCESSING: Define spatial chunks and buffers
-# This splits the large catalog across CPU workers and prevents edge artifacts
-opt_chunk_size(ctg_clipped) <- 200  # Process in 200m x 200m chunks
-opt_chunk_buffer(ctg_clipped) <- 10 # 10m overlap buffer around chunks
-
-tic()
-opt_output_files(ctg_clipped) <- paste0("E:/Remote Sensing Media/",date_folder,"/05. Point Clouds Ground Classified IMPACT/", "IMPACT_Tile_{XLEFT}_{YBOTTOM}_classified", file_date_safe)
-
-# Apply Cloth Simulation Filter (CSF) to identify ground points
-ctg_classified <- classify_ground(
-  ctg_clipped, 
-  csf(sloop_smooth = TRUE, 
-      class_threshold = 0.15, 
-      cloth_resolution = 1.5, 
-      rigidness = 3,
-      time_step = 1)
-)
-toc()
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Optional: Generate Digital Terrain Model (DTM) ####
+# 5. Ground Classification (Not needed) ####
 # ──────────────────────────────────────────────────────────────────────────────
 
-# # Ensure output folder exists (e.g., ".../10. Digital Terrain Models/") before running.
-# 
-# ctg_classified <- readLAScatalog(paste0("E:/Remote Sensing Media/",date_folder,"/05. Point Clouds Ground Classified"))
-# 
-# plan(multisession, workers = 6)
-# opt_independent_files(ctg_classified) <- TRUE
-# opt_select(ctg_classified) <- "xyzc"
-# 
-# # Maintain exact chunking/buffer parameters to match classification
-# opt_chunk_size(ctg_classified) <- 200 
-# opt_chunk_buffer(ctg_classified) <- 10  
-# 
-# tic()
-# opt_output_files(ctg_classified) <- paste0("E:/Remote Sensing Media/",date_folder,"/10. Digital Terrain Models/", "IMPACT_Tile_{XLEFT}_{YBOTTOM}_dtm_", file_date_safe)
-# 
-# # Rasterize ground points into DTM using TIN algorithm. 
-# # Default 0.5m resolution smooths micro-noise; adjust to 0.05m to match CHM pixel scaling.
-# ctg_dtm <- rasterize_terrain(ctg_classified, 
-#                              res = 0.5, 
-#                              algorithm = tin())
-# print("Rasterize DTM time:")
-# toc()
+# Not needed when using baseline DTM for Normalization
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 6. Height Normalization ####
+# 6. Height Normalization (USING BASELINE DTM) ####
 # ──────────────────────────────────────────────────────────────────────────────
 plan(multisession, workers = 6)
-opt_independent_files(ctg_classified) <- TRUE
-opt_select(ctg_classified) <- "xyzc"
 
-# Maintain consistent chunking logic
-opt_chunk_size(ctg_classified) <- 200 
-opt_chunk_buffer(ctg_classified) <- 10 
+opt_independent_files(ctg_clipped) <- TRUE
+opt_select(ctg_clipped) <- "xyz"
+opt_output_files(ctg_clipped) <- paste0("E:/Remote Sensing Media/", date_folder,"/06. Point Clouds Normalised/", "{ORIGINALFILENAME}_classified_normalised")
+
+# 2. Load the Master Baseline DTM VRT generated in October 2025
+baseline_dtm <- rast("E:/Remote Sensing Media/03. 30 October 2025/05. Baseline Plot DTMs/Master_Baseline_DTM_03._30_October_2025.vrt")
 
 tic()
-opt_output_files(ctg_classified) <- paste0("E:/Remote Sensing Media/",date_folder,"/06. Point Clouds Normalised IMPACT/", "IMPACT_Tile_{XLEFT}_{YBOTTOM}_normalised", file_date_safe)
+print("Normalizing point clouds against the October baseline DTM...")
 
-# Normalize point elevations to calculate absolute tree heights above ground
-ctg_normalised <- normalize_height(las = ctg_classified, algorithm = tin())
+# 3. Perform raster-based elevation normalization
+# lidR automatically queries the DTM raster to subtract ground elevation from Z coordinates
+ctg_normalised <- normalize_height(las = ctg_clipped, algorithm = baseline_dtm)
 toc()
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 7. Canopy Height Model (CHM) Generation ####
 # ──────────────────────────────────────────────────────────────────────────────
-# Re-load normalized catalog to ensure a clean state
-ctg_normalised <- readLAScatalog(paste0("E:/Remote Sensing Media/",date_folder,"/06. Point Clouds Normalised IMPACT"))
+# RAM Optimization Strategies (Useful for heavy workloads):
+# 1. Use smaller chunk/plot sizes.
+# 2. Use opt_select() to load only needed fields into memory.
+# 3. Decrease active workers (threads) since each worker consumes its own RAM footprint.
+# 4. Exclude ground points and sub-surface noise.
 
-plan(multisession, workers = 4)
+ctg_normalised <- readLAScatalog(paste0("E:/Remote Sensing Media/",date_folder,"/06. Point Clouds Normalised"))
+
+# Limit the amount of workers (threads) if RAM constrained
+plan(multisession, workers = 6)
 opt_independent_files(ctg_normalised) <- TRUE
 opt_select(ctg_normalised) <- "xyz"
 
-# Filter noise: Drop extreme outlier points (below ground or impossibly high)
+# Filter noise: Drop ground points and sub-surface/extreme-height noise
 opt_filter(ctg_normalised) <- "-drop_z_below 0 -drop_z_above 30"
 
-# Maintain consistent chunking logic
-opt_chunk_size(ctg_normalised) <- 200 
-opt_chunk_buffer(ctg_normalised) <- 10 
-
 tic()
-opt_output_files(ctg_normalised) <- paste0("E:/Remote Sensing Media/",date_folder,"/07. Canopy Height Models IMPACT/", "IMPACT_Tile_{XLEFT}_{YBOTTOM}_chm", file_date_safe)
+# Stream outputs directly to disk rather than holding in memory
+opt_output_files(ctg_normalised) <- paste0("E:/Remote Sensing Media/",date_folder,"/07. Canopy Height Models/", "{*}_chm")
 
-# Rasterize highest points into a continuous CHM grid
+# Rasterize highest points into a continuous CHM grid with interpolation
 ctg_chm <- rasterize_canopy(ctg_normalised,
                             res = 0.05,
                             algorithm = p2r(na.fill = tin()))
@@ -219,31 +179,33 @@ print("Rasterize canopy time:")
 toc()
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 8. Metric Extraction & Export ####
+# 8. Master CHM Consolidation & Metric Extraction ####
 # ──────────────────────────────────────────────────────────────────────────────
 tic()
+print("Consolidating individual CHM plots into a master single file...")
 
-# Consolidate individual chunked CHM tiles via Virtual Raster (VRT)
-chm_files <- list.files(paste0("E:/Remote Sensing Media/",date_folder,"/07. Canopy Height Models IMPACT/"), 
-                        pattern = "\\.tif$", full.names = TRUE)
+# 1. Gather all individual CHM files generated in Step 7
+chm_dir <- paste0("E:/Remote Sensing Media/", date_folder, "/07. Canopy Height Models/")
+chm_files <- list.files(chm_dir, pattern = "\\.tif$", full.names = TRUE)
+
+# 2. Create a Virtual Raster (VRT) to stitch them together
 site_chm_vrt <- terra::vrt(chm_files)
 
-# Write the VRT out to a single physical .tif file for exact_extract
-single_chm_path <- paste0("E:/Remote Sensing Media/",date_folder,"/07. Canopy Height Models IMPACT/IMPACT_Site_CHM_Single_", file_date_safe, ".tif")
+# 3. Write the VRT out to a single physical .tif file
+single_chm_path <- paste0(chm_dir, "Master_Site_CHM_Single_", file_date_safe, ".tif")
 terra::writeRaster(site_chm_vrt, filename = single_chm_path, overwrite = TRUE)
 
-# Optional: Cleanup chunk files to save SSD space
-file.remove(chm_files)
+print(paste("Master CHM successfully saved to:", single_chm_path))
 
-# Re-read the singular physical file for geospatial extraction
+# 4. Re-read the singular physical file for the extraction step
 site_chm_single <- terra::rast(single_chm_path)
 
-# Calculate exact maximum tree height within each delineated crown polygon
+# 5. Calculate exact maximum tree height within each delineated crown polygon
 trees$Tree_Height <- exact_extract(site_chm_single, trees, 'max')
 
-# Export updated geospatial shapefile
-st_write(trees, paste0("E:/Remote Sensing Media/",date_folder,"/09. Crown Metrics IMPACT/Crown_Metrics_", file_date_safe, ".shp"), delete_dsn = TRUE)
+# 6. Save to shapefile (completely overwriting old files to prevent schema errors)
+st_write(trees, paste0("E:/Remote Sensing Media/",date_folder,"/09. Crown Metrics/Crown_Metrics_", file_date_safe, ".shp"), delete_dsn = TRUE)
 
-# Export lightweight tabular CSV data (drops heavy geometry)
-write.csv(st_drop_geometry(trees), paste0("E:/Remote Sensing Media/",date_folder,"/09. Crown Metrics IMPACT/Crown_Metrics_", file_date_safe, ".csv"), row.names = FALSE)
+# 7. Save lightweight tabular CSV data (drops the messy spatial geometry text)
+write.csv(st_drop_geometry(trees), paste0("E:/Remote Sensing Media/",date_folder,"/09. Crown Metrics/Crown_Metrics_", file_date_safe, ".csv"), row.names = FALSE)
 toc()

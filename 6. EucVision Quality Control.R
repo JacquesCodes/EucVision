@@ -27,10 +27,10 @@ library(rgl)
 # ──────────────────────────────────────────────────────────────────────────────
 # === CONFIGURE BATCH AND PLOT ===
 # Change this single variable for each new batch!
-date_folder <- "03. 30 October 2025"
+date_folder <- "23. 13 April 2026"
 
 # Define the specific plot number to visualize
-Number <- 37
+Number <- 38
 
 # Extract the date part and create a safe filename format
 # (e.g., "17. 02 March 2026" -> "02_March_2026")
@@ -135,7 +135,7 @@ if (!is.null(las_classified)) {
   plot(gnd, size = 4, bg = "white")
   
   # Generate a temporary 1m DTM using TIN for visualization
-  dtm_tin_0 <- rasterize_terrain(las_classified, res = 1, algorithm = tin())
+  dtm_tin_0 <- rasterize_terrain(las_classified, res = 0.05, algorithm = tin())
   plot_dtm3d(dtm_tin_0, bg = "white")
 }
 
@@ -150,32 +150,55 @@ if (!is.null(las_chm)) {
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 5. Individual Tree Detection (ITD) ####
+# 5. Individual Tree Detection (ITD) & Segmentation (ITS) ####
 # ──────────────────────────────────────────────────────────────────────────────
-MinimumTreeHeight <- 0.5
 
-# Initialize the Local Maximum Filter (LMF) algorithm
-# 'ws' defines the circular search window diameter in meters
-lmf_algorithm <- lmf(ws = 3, hmin = MinimumTreeHeight, shape = "circular")
-
-# Execute ITD if the rasterized CHM is available
-if (!is.null(las_chm)) {
-  # Locate individual treetops
-  ttops <- locate_trees(las = las_chm, algorithm = lmf_algorithm)
-  
-  # Visualize ITD results in 2D (Overlaying detected points on the CHM raster)
-  plot(las_chm, col = height.colors(50))
-  plot(sf::st_geometry(ttops), add = TRUE, pch = 3)
-  
-  # Visualize ITD results in 3D 
-  # (Requires both the normalised point cloud and the CHM to be loaded)
-  if (!is.null(las_normalised)) {
-    x <- plot(las_normalised, bg = "white", size = 2)
-    add_treetops3d(x, ttops, radius = 0.15, fastTransparency = TRUE, alpha = 0.8)
-  } else {
-    message("Cannot plot 3D treetops: Normalised point cloud is missing.")
-  }
-}
+# MinimumTreeHeight <- 0.5
+# 
+# # Initialize the Local Maximum Filter (LMF) algorithm for treetops
+# # 'ws' defines the circular search window diameter in meters
+# lmf_algorithm <- lmf(ws = 3, hmin = MinimumTreeHeight, shape = "circular")
+# 
+# # Execute ITD and Segmentation if the required spatial data is available
+# if (!is.null(las_chm) && !is.null(las_normalised)) {
+#   
+#   # --- 1. Locate Individual Treetops (ITD) ---
+#   ttops <- locate_trees(las = las_chm, algorithm = lmf_algorithm)
+#   
+#   # --- 2. Segment the 3D Point Cloud (ITS) ---
+#   # Initialize the Dalponte 2016 algorithm using the CHM and detected treetops
+#   algo_dalponte <- dalponte2016(chm = las_chm, treetops = ttops)
+#   
+#   # Segment the points. This automatically adds a 'treeID' column to the LAS object
+#   las_segmented <- segment_trees(las = las_normalised, algorithm = algo_dalponte)
+#   
+#   # Filter out points that were not assigned to a tree (e.g., ground/noise)
+#   las_trees_only <- filter_poi(las_segmented, !is.na(treeID))
+#   
+#   # --- 3. Optional: Generate Dynamic Crown Polygons from Points ---
+#   # Since your second script uses crown shapes, you can extract them right here!
+#   delineated_crowns <- crown_metrics(las_trees_only, func = .stdtreemetrics, geom = "convex")
+#   
+#   # --- 4. Visualizations ---
+#   
+#   # Visualization A: 2D CHM with Treetops and Delineated Crowns
+#   plot(las_chm, col = height.colors(50), main = "CHM with Treetops & Crown Boundaries")
+#   plot(sf::st_geometry(ttops), add = TRUE, pch = 3, col = "black")
+#   if (!is.null(delineated_crowns)) {
+#     plot(sf::st_geometry(delineated_crowns), add = TRUE, border = "white", lwd = 2)
+#   }
+#   
+#   # Visualization B: 3D Segmented Point Cloud
+#   # Points are colored randomly by their unique treeID
+#   plot(las_trees_only, 
+#        color = "treeID", 
+#        colorPalette = pastel.colors(200),
+#        bg = "white", 
+#        size = 3)
+#   
+# } else {
+#   message("Cannot perform ITD or Segmentation: Both CHM and Normalised point clouds are required.")
+# }
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 6. Optional: 3D Animation Export ####

@@ -67,8 +67,8 @@ folders <- list.dirs(base_dir, recursive = FALSE)
 exclude_list <- c("00. Dataset template", 
                   "000. Projects", "terra_temp",
                   "00. Baseline DTM and Plot Cropping",
-                  "01. 25 February 2025 (DJI Mavic)", 
-                  "02. 01 September 2025 (DJI M300)",
+                  "01. 25 February 2025", 
+                  "02. 01 September 2025",
                   "03. 30 October 2025",
                   "17. 03 March 2026 (Multispectral)",
                   "20. 24 March 2026 (Multispectral)")
