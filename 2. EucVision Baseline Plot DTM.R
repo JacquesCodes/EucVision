@@ -45,6 +45,9 @@ for (dir in c(clipped_dir, denoised_dir, classified_dir, dtm_dir)) {
 plots_buffered_unsorted <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. Templates/EucVision LAScatalog Boundaries/LAScatalog Plot Boundaries.shp")
 plots <- plots_buffered_unsorted[order(plots_buffered_unsorted$id), ]
 
+# Load your new mask boundary
+boundary <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. Templates/EucVision LAScatalog Boundaries/IMPACT Plot & Compartment Boundaries 2048.shp")
+
 all_las_files <- list.files(las_folder, pattern = "\\.(las|laz)$", full.names = TRUE, ignore.case = TRUE)
 top_files <- all_las_files[grepl("Top", basename(all_las_files), ignore.case = TRUE)]
 bot_files <- all_las_files[grepl("Bottom", basename(all_las_files), ignore.case = TRUE)]
@@ -197,17 +200,18 @@ smoothed_dtm_path <- paste0(dtm_dir, "Master_Baseline_DTM_Smoothed_", file_date_
 raw_dtm <- terra::rast(single_dtm_path)
 
 # 1. Morphological Closing for <= 2m holes
-print("Step 1/4: Dilating terrain over small sinkholes...")
+print("Step 1/5: Dilating terrain over small sinkholes...")
 dtm_dilated <- terra::focal(raw_dtm, w = 41, fun = "max", na.rm = TRUE)
 
-print("Step 2/4: Eroding terrain back to true natural slopes...")
+print("Step 2/5: Eroding terrain back to true natural slopes...")
 dtm_closed <- terra::focal(dtm_dilated, w = 41, fun = "min", na.rm = TRUE)
 
 # 2. Targeted Surgical Patch for Massive (4-5m) Sinkholes
-print("Step 3/4: Targeted surgical fill for massive 5m sinkholes...")
+print("Step 3/5: Targeted surgical fill for massive 5m sinkholes...")
 
 # Create a heavily smoothed 5m reference surface to identify the massive drops
-reference_surface <- terra::focal(dtm_closed, w = 101, fun = "median", na.rm = TRUE)
+# Swapped to "mean" to prevent the laptop from freezing for hours
+reference_surface <- terra::focal(dtm_closed, w = 101, fun = "mean", na.rm = TRUE)
 
 # If the ground suddenly drops more than 0.5m below the general local area, 
 # it's a massive SfM artifact. Turn those pixels into NA (a blank void).
@@ -220,12 +224,27 @@ dtm_patched[dtm_patched < (reference_surface - 0.5)] <- NA
 dtm_filled <- terra::focal(dtm_patched, w = 111, fun = "mean", na.rm = TRUE, na.only = TRUE)
 
 # 3. Final Light Blend
-print("Step 4/4: Final surface blending...")
+print("Step 4/5: Final surface blending...")
 final_dtm <- terra::focal(dtm_filled, w = 5, fun = "median", na.rm = TRUE)
 
-# Export the finalized, absolutely perfect DTM
-terra::writeRaster(final_dtm, filename = smoothed_dtm_path, overwrite = TRUE)
+# 4. Boundary Masking (Shaving the Edge Artifacts)
+print("Step 5/5: Shaving boundary edge artifacts...")
 
-print(paste("- SINKHOLE-FREE DTM successfully saved to:", smoothed_dtm_path))
+# Convert the sf boundary object to terra's vector format
+boundary_vect <- terra::vect(boundary)
+
+# Ensure Coordinate Reference Systems match perfectly
+if (terra::crs(boundary_vect) != terra::crs(final_dtm)) {
+  boundary_vect <- terra::project(boundary_vect, terra::crs(final_dtm))
+}
+
+# Crop reduces the processing extent, Mask cookie-cuts the exact shape
+final_dtm_clipped <- terra::crop(final_dtm, boundary_vect)
+final_dtm_clipped <- terra::mask(final_dtm_clipped, boundary_vect)
+
+# Export the finalized, absolutely perfect DTM
+terra::writeRaster(final_dtm_clipped, filename = smoothed_dtm_path, overwrite = TRUE)
+
+print(paste("- SINKHOLE-FREE & CLIPPED DTM successfully saved to:", smoothed_dtm_path))
 print("Pipeline Complete!")
 toc()
