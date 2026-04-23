@@ -30,7 +30,7 @@ library(stringr)
 base_dir <- "E:/Remote Sensing Media"
 
 # Define the absolute path to your Baseline DTM (Stays constant across batches)
-baseline_dtm_path <- "E:/Remote Sensing Media/03. 30 October 2025/05b. Baseline Plot DTMs/Master_Baseline_DTM_Smoothed_30_October_2025.tif"
+baseline_dtm_path <- "E:/Remote Sensing Media/00. Baseline DTM/Ultimate_Ensemble_Baseline_DTM.tif"
 
 # Load the baseline DTM once into memory before the loop starts to save time
 baseline_dtm <- rast(baseline_dtm_path)
@@ -38,8 +38,10 @@ baseline_dtm <- rast(baseline_dtm_path)
 # --- EXCLUDE LIST ---
 # Clearly mark any folders you want the batch processor to completely ignore
 exclude_list <- c("000. Projects",
-                  "00. Dataset template", 
-                  "01. 25 February 2025", 
+                  "00. Baseline DTM",
+                  "00. Dataset Template", 
+                  "01. 25 February 2025",
+                  "02. 01 September 2025",
                   "17. 03 March 2026 (Multispectral)",
                   "20. 24 March 2026 (Multispectral)")
 

@@ -64,9 +64,9 @@ plot_colors <- c(
 # ──────────────────────────────────────────────────────────────────────────────
 # Fetch all dataset folders and exclude specific utility/baseline directories
 folders <- list.dirs(base_dir, recursive = FALSE)
-exclude_list <- c("00. Dataset template", 
-                  "000. Projects", "terra_temp",
-                  "00. Baseline DTM and Plot Cropping",
+exclude_list <- c("000. Projects",
+                  "00. Baseline DTM",
+                  "00. Dataset Template",
                   "01. 25 February 2025", 
                   "02. 01 September 2025",
                   "03. 30 October 2025",

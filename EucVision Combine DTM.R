@@ -23,7 +23,7 @@ dtm_stack <- c(dtm_1, dtm_2, dtm_3)
 ultimate_dtm <- terra::app(dtm_stack, fun = "max", na.rm = TRUE)
 
 # 5. Export the God-Tier Baseline DTM
-output_path <- "E:/Remote Sensing Media/00. Baseline DTM and Plot Cropping/Ultimate_Ensemble_Baseline_DTM.tif"
+output_path <- "E:/Remote Sensing Media/00. Baseline DTM/Ultimate_Ensemble_Baseline_DTM.tif"
 
 # Ensure the output directory exists
 if (!dir.exists(dirname(output_path))) dir.create(dirname(output_path), recursive = TRUE)
