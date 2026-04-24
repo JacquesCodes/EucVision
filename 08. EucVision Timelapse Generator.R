@@ -109,8 +109,8 @@ for (folder_path in dataset_folders) {
   
   all_tifs <- list.files(ortho_dir, pattern = "\\.tif$", full.names = TRUE, ignore.case = TRUE)
   
-  # Filter OUT specific unneeded TIFs ("Top" and "Cross Hatch")
-  valid_tifs <- all_tifs[!grepl("Top|Cross Hatch", basename(all_tifs), ignore.case = TRUE)]
+  # Filter OUT specific unneeded TIFs ("Top", "Cross Hatch" and "Tiled")
+  valid_tifs <- all_tifs[!grepl("Top|Cross Hatch|Tiled", basename(all_tifs), ignore.case = TRUE)]
   
   if (length(valid_tifs) == 0) next
   
@@ -264,7 +264,7 @@ if (length(clipped_images) > 0) {
   video_path <- file.path(output_dir, "Timelapse.mp4")
   
   # Compile all generated PNGs into a 1 FPS video
-  av_encode_video(clipped_images, output = video_path, framerate = 1)
+  av_encode_video(clipped_images, output = video_path, framerate = 10)
   
   print(paste("High-Res Time-lapse video saved to:", video_path))
   

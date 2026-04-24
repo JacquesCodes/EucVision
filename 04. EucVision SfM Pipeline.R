@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# EUCVISION: BATCH PLOT-LEVEL LiDAR PROCESSING PIPELINE USING DTM ####
+# EUCVISION: BATCH PLOT-LEVEL SfM PROCESSING PIPELINE ####
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
 # Email: Jacques.Stellies@gmail.com
@@ -9,7 +9,6 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # 1. Setup and Imports ####
 # ──────────────────────────────────────────────────────────────────────────────
-# Load required libraries for point cloud processing, spatial operations, and parallel computing
 library(lidR)
 library(RCSF)
 library(RMCC)
@@ -28,45 +27,52 @@ library(stringr)
 # 2. Configuration & Batch Management ####
 # ──────────────────────────────────────────────────────────────────────────────
 base_dir <- "E:/Remote Sensing Media"
-
-# Define the absolute path to your Baseline DTM (Stays constant across batches)
 baseline_dtm_path <- "E:/Remote Sensing Media/00. Baseline DTM/Ultimate_Ensemble_Baseline_DTM.tif"
 
-# Load the baseline DTM once into memory before the loop starts to save time
 baseline_dtm <- rast(baseline_dtm_path)
 
+# --- RUN CONTROLS ---
+# Set to a specific folder name to run only that dataset (e.g., "01. 25 February 2025") 
+# Set to NULL to run the full batch process.
+target_date_override <- NULL 
+
+# Set to TRUE to keep intermediate directories (Clipped, Normalised). FALSE deletes them.
+keep_intermediate_dirs <- FALSE 
+
 # --- EXCLUDE LIST ---
-# Clearly mark any folders you want the batch processor to completely ignore
 exclude_list <- c("000. Projects",
                   "00. Baseline DTM",
                   "00. Dataset Template", 
                   "01. 25 February 2025",
-                  "02. 01 September 2025",
                   "17. 03 March 2026 (Multispectral)",
                   "20. 24 March 2026 (Multispectral)")
 
-# Fetch all folders and filter for standard dated folders not on the exclude list
 folders <- list.dirs(base_dir, recursive = FALSE)
 dataset_folders <- folders[grepl("^\\d{2}\\.", basename(folders)) & !basename(folders) %in% exclude_list]
+
+# Apply the target date override if one is provided
+if (!is.null(target_date_override)) {
+  dataset_folders <- dataset_folders[basename(dataset_folders) == target_date_override]
+  if (length(dataset_folders) == 0) {
+    stop("Target date folder not found! Please check the spelling and try again.")
+  }
+}
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 3. Static Spatial Data Loading ####
 # ──────────────────────────────────────────────────────────────────────────────
-# Load plot boundary shapefiles once (Static across all batches)
 plots_buffered_unsorted <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. Templates/EucVision LAScatalog Boundaries/LAScatalog Plot Boundaries.shp")
 plots <- plots_buffered_unsorted[order(plots_buffered_unsorted$id), ]
 
-# Enable parallel processing globally for the session
 plan(multisession, workers = 6) 
 
-print("Starting batch processing pipeline...")
+print("Starting processing pipeline...")
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 4. BATCH PROCESSING LOOP ####
+# 4. PROCESSING LOOP ####
 # ──────────────────────────────────────────────────────────────────────────────
 for (folder_path in dataset_folders) {
   
-  # Extract dynamic date strings for this specific iteration
   date_folder <- basename(folder_path)
   file_date <- sub("^\\d+\\.\\s*", "", date_folder)
   file_date_safe <- gsub(" ", "_", file_date)
@@ -75,7 +81,6 @@ for (folder_path in dataset_folders) {
   print(paste("PROCESSING DATASET:", date_folder))
   print(paste("================================================================"))
   
-  # Define processing directories dynamically
   las_folder     <- file.path(folder_path, "03. Point Clouds")
   clipped_dir    <- file.path(folder_path, "04. Point Clouds Clipped")
   normalised_dir <- file.path(folder_path, "06. Point Clouds Normalised")
@@ -83,27 +88,29 @@ for (folder_path in dataset_folders) {
   polygons_dir   <- file.path(folder_path, "08. Crown Polygons")
   metrics_dir    <- file.path(folder_path, "09. Crown Metrics")
   
-  # Ensure all output directories exist for this batch
+  single_chm_path <- file.path(chm_dir, paste0("Master_Site_CHM_Single_", file_date_safe, ".tif"))
+  
   for (dir in c(clipped_dir, normalised_dir, chm_dir, metrics_dir)) {
     if (!dir.exists(dir)) dir.create(dir, recursive = TRUE)
   }
   
-  # --- PRE-FLIGHT CHECKS ---
-  # Skip this batch if no point clouds exist yet
+  if (file.exists(single_chm_path)) {
+    print(paste("-> SKIPPED: Master CHM already exists for", date_folder))
+    next
+  }
+  
   all_las_files <- list.files(las_folder, pattern = "\\.(las|laz)$", full.names = TRUE, ignore.case = TRUE)
   if (length(all_las_files) == 0) {
     print(paste("-> SKIPPED: No .las/.laz files found in", las_folder))
     next
   }
   
-  # Skip this batch if the Crown Polygons shapefile hasn't been created yet
   crown_shp_path <- file.path(polygons_dir, paste0("Crown_Polygons_", file_date_safe, ".shp"))
   if (!file.exists(crown_shp_path)) {
     print(paste("-> SKIPPED: No Crown Polygons found for", date_folder))
     next
   }
   
-  # Load and validate dynamic crown polygons
   trees <- st_read(crown_shp_path, quiet = TRUE)
   if (is.na(st_crs(trees)$epsg) || st_crs(trees)$epsg != 2048) {
     trees <- st_transform(trees, 2048)
@@ -149,10 +156,10 @@ for (folder_path in dataset_folders) {
   toc()
   
   # ────────────────────────────────────────────────────────────────────────────
-  # 4.2. Height Normalization (USING BASELINE DTM)
+  # 4.2. Height Normalization 
   # ────────────────────────────────────────────────────────────────────────────
   tic("Normalization complete")
-  print("Normalizing point clouds against the October baseline DTM...")
+  print("Normalizing point clouds against the Ensemble Baseline DTM...")
   opt_independent_files(ctg_clipped) <- TRUE
   opt_select(ctg_clipped) <- "xyz"
   opt_output_files(ctg_clipped) <- file.path(normalised_dir, "{ORIGINALFILENAME}_classified_normalised")
@@ -183,32 +190,34 @@ for (folder_path in dataset_folders) {
   chm_files <- list.files(chm_dir, pattern = "\\.tif$", full.names = TRUE)
   site_chm_vrt <- terra::vrt(chm_files)
   
-  # Extract exact maximum tree heights directly from the VRT
   trees$Tree_Height <- exact_extract(site_chm_vrt, trees, 'max')
   
-  # Calculate dynamic cap safely
   max_tree_height <- max(trees$Tree_Height[is.finite(trees$Tree_Height)], na.rm = TRUE)
   dynamic_cap <- ceiling(max_tree_height)
   print(paste("-> Dynamic CHM cap safely set to:", dynamic_cap, "meters"))
   
-  # Clamp the artifacts dynamically
   site_chm_clamped <- terra::clamp(site_chm_vrt, lower = 0, upper = dynamic_cap)
   
-  # Write the perfectly capped raster out
-  single_chm_path <- file.path(chm_dir, paste0("Master_Site_CHM_Single_", file_date_safe, ".tif"))
   terra::writeRaster(site_chm_clamped, filename = single_chm_path, overwrite = TRUE)
   
-  # Save Shapefile and CSV
   st_write(trees, file.path(metrics_dir, paste0("Crown_Metrics_", file_date_safe, ".shp")), delete_dsn = TRUE, quiet = TRUE)
   write.csv(st_drop_geometry(trees), file.path(metrics_dir, paste0("Crown_Metrics_", file_date_safe, ".csv")), row.names = FALSE)
   toc()
   
+  # --- FOLDER CLEANUP ---
+  if (!keep_intermediate_dirs) {
+    print("Cleaning up intermediate directories to save drive space...")
+    unlink(clipped_dir, recursive = TRUE)
+    unlink(normalised_dir, recursive = TRUE)
+  } else {
+    print("Retaining intermediate directories as requested...")
+  }
+  
   # --- GARBAGE COLLECTION ---
-  # Clear large catalog objects from RAM before the next iteration starts
   rm(ctg_clipped, ctg_normalised, ctg_chm, site_chm_vrt, site_chm_clamped, trees, chm_files, all_las_files)
   gc()
 }
 
 print("================================================================")
-print("BATCH PIPELINE COMPLETE! All datasets processed successfully.")
+print("PIPELINE COMPLETE! All designated datasets processed successfully.")
 print("================================================================")

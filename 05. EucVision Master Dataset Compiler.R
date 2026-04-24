@@ -29,9 +29,9 @@ Sys.setlocale("LC_TIME", "C")
 src_base_dir <- "E:/Remote Sensing Media"
 dest_backup_dir <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/05. Crown Metrics"
 
-# Define dataset specific paths
-dest_master_csv <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data analysis/01. Main dataset CSV.csv"
-other_dataset_csv <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data analysis/01. Other dataset.csv"
+# Define dataset specific paths (Updated to "01. Master Dataset.csv")
+dest_master_csv <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data analysis/01. Master Dataset.csv"
+field_measurements_csv <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data analysis/02. Field Measurements.csv"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 3. Run Script & Extract UAV Data ####
@@ -106,9 +106,9 @@ if (length(csv_list) > 0) {
   cat("\nMerging UAV CSV files...\n")
   master_dataset <- bind_rows(csv_list)
   
-  if (file.exists(other_dataset_csv)) {
-    cat("Found '01. Other dataset.csv'. Running FULL JOIN...\n")
-    other_data <- read_csv(other_dataset_csv, show_col_types = FALSE)
+  if (file.exists(field_measurements_csv)) {
+    cat("Found '02. Field Measurements.csv'. Running FULL JOIN...\n")
+    other_data <- read_csv(field_measurements_csv, show_col_types = FALSE)
     
     # Safely rename columns in the external dataset to prevent .x and .y duplicates
     if ("Tree_Height" %in% names(other_data)) {
