@@ -89,7 +89,7 @@ opt_output_files(ctg_denoised) <- paste0(classified_dir, "Tile_{XLEFT}_{YBOTTOM}
 tic()
 print("Applying Progressive TIN Densification (PTD) tuned for SfM Canopy Shroud...")
 
-# Tuned specifically for dense SfM canopy crusts
+# Tuned specifically for dense SfM canopy crusts using Progressive TIN Densification (PTD)
 ctg_classified <- classify_ground(
   ctg_denoised, 
   ptd(res = 12,          # 12m guarantees the search grid overhangs canopy widths
