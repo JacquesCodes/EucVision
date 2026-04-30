@@ -3,10 +3,12 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
 # Email: Jacques.Stellies@gmail.com
-# Project: EucXylo (https://eucxylo.sun.ac.za/) 
+# Project: EucXylo (https://eucxylo.sun.ac.za/)
+# ──────────────────────────────────────────────────────────────────────────────
 # Description: Processes raw baseline point clouds across the entire site using 
-#              optimal geometric chunks, classifies ground, generates a Master 
-#              DTM VRT, and crops the final raster to the study boundary.
+#              optimal geometric chunks for 32GB of RAM, classifies ground, 
+#              generates a Master DTM VRT, and crops the final raster to the 
+#              study boundary.
 # ──────────────────────────────────────────────────────────────────────────────
 
 # ──────────────────────────────────────────────────────────────────────────────

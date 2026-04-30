@@ -5,6 +5,14 @@
 # Email: Jacques.Stellies@gmail.com
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
 # ──────────────────────────────────────────────────────────────────────────────
+# Description: Automates the extraction, backup, and consolidation of temporal 
+#              crown metrics across all flight datasets. It seamlessly joins 
+#              UAV-derived data with ground-truth field measurements, dynamically 
+#              coalescing overlapping variables. The pipeline also standardizes 
+#              nomenclature, applies statistical outlier filtering to remove 
+#              anomalous height spikes, and exports a chronologically sorted 
+#              Master Dataset for downstream statistical analysis.
+# ──────────────────────────────────────────────────────────────────────────────
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 1. Setup and Imports ####

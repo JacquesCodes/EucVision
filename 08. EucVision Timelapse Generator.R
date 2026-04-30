@@ -5,6 +5,13 @@
 # Email: Jacques.Stellies@gmail.com
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
 # ──────────────────────────────────────────────────────────────────────────────
+# Description: Automates the generation of a high-resolution time-lapse video 
+#              to track canopy development across temporal orthomosaics. It 
+#              dynamically crops raster imagery to a target viewing extent, 
+#              resolves South African CRS axis-flipping conflicts, and overlays 
+#              both static plot geometries and dynamic tree crowns before 
+#              compiling the annotated frames into an MP4 animation.
+# ──────────────────────────────────────────────────────────────────────────────
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 1. Setup and Imports ####

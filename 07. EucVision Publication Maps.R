@@ -5,6 +5,13 @@
 # Email: Jacques.Stellies@gmail.com
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
 # ──────────────────────────────────────────────────────────────────────────────
+# Description: Functions as a targeted visual inspection and cartographic mapping 
+#              tool for individual field plots. It loads normalized point clouds 
+#              and Canopy Height Models (CHMs), applies focal smoothing matrices 
+#              to mitigate raster noise, and generates both interactive 3D point 
+#              cloud renders and publication-ready 2D spatial maps complete with 
+#              cartographic annotations (scale bars, north arrows) using ggplot2.
+# ──────────────────────────────────────────────────────────────────────────────
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 1. Setup and Imports ####

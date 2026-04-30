@@ -5,6 +5,14 @@
 # Email: Jacques.Stellies@gmail.com
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
 # ──────────────────────────────────────────────────────────────────────────────
+# Description: Serves as an interactive visual inspection and diagnostic tool 
+#              for the broader point cloud processing pipeline. It selectively 
+#              loads specific temporal plots to render multi-stage 3D point cloud 
+#              layers (raw, ground-classified, height-normalized) alongside 2D 
+#              Canopy Height Models. It also features modular, optional routines 
+#              for Individual Tree Detection (ITD), 3D Dalponte canopy segmentation, 
+#              and dynamic 3D rgl animation exports.
+# ──────────────────────────────────────────────────────────────────────────────
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 1. Setup and Imports ####
@@ -27,10 +35,10 @@ library(rgl)
 # ──────────────────────────────────────────────────────────────────────────────
 # === CONFIGURE BATCH AND PLOT ===
 # Change this single variable for each new batch!
-date_folder <- "23. 13 April 2026"
+date_folder <- "07. December 2025 (TLS)"
 
 # Define the specific plot number to visualize
-Number <- 38
+Number <- 17
 
 # Extract the date part and create a safe filename format
 # (e.g., "17. 02 March 2026" -> "02_March_2026")

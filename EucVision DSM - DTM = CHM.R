@@ -5,6 +5,15 @@
 # Email: Jacques.Stellies@gmail.com
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
 # ──────────────────────────────────────────────────────────────────────────────
+# Description: Automates a two-part raster math and data consolidation workflow. 
+#              Part 1 generates site-wide Canopy Height Models (CHMs) by 
+#              mosaicing masked Digital Surface Models (DSMs) and subtracting a 
+#              master baseline DTM, subsequently extracting maximum tree heights. 
+#              Part 2 aggregates these tabular metrics across all temporal 
+#              flights, seamlessly joins them with ground-truth field data, 
+#              applies statistical outlier filtering, and exports a cleaned, 
+#              chronologically sorted Master Dataset for analysis.
+# ──────────────────────────────────────────────────────────────────────────────
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 1. Setup and Imports ####
@@ -35,8 +44,8 @@ baseline_dtm_path <- "E:/Remote Sensing Media/00. Baseline DTM/Ultimate_Ensemble
 baseline_dtm <- rast(baseline_dtm_path)
 
 # --- RUN CONTROLS ---
-target_date_override <- NULL
-# target_date_override <- "07. 28 November 2025"
+# target_date_override <- NULL
+target_date_override <- "07. 28 November 2025"
 
 # --- EXCLUDE LIST ---
 exclude_list <- c("000. Projects",
