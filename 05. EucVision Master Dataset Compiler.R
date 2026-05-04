@@ -45,6 +45,13 @@ field_measurements_csv <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc.
 # 3. Run Script & Extract UAV Data ####
 # ──────────────────────────────────────────────────────────────────────────────
 main_folders <- list.dirs(src_base_dir, recursive = FALSE)
+
+# --- EXCLUSION FILTER ---
+# Remove the specified TLS folder from the list of directories to process
+folder_to_exclude <- "07. December 2025 (TLS)"
+main_folders <- main_folders[basename(main_folders) != folder_to_exclude]
+# ------------------------
+
 csv_list <- list()
 
 cat("\n--- Starting Teams backup and data extraction ---\n")

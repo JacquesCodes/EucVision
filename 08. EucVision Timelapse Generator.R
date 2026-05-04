@@ -36,11 +36,11 @@ terraOptions(memfrac = 0.75, tempdir = temp_dir)
 
 # --- INPUT/OUTPUT CONFIGURATION ---
 # 1. Define the target plot boundaries for cropping the viewing extent
-shp_path <- "E:/Remote Sensing Media/000. Projects/0. Plot boundaries for cropping/Plot 37-40.shp"
+shp_path <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/16. Plot 37-40 Shapefile/Plot 37-40.shp"
 plot_shp <- st_read(shp_path, quiet = TRUE)
 
 # 2. Define the static Normal Plot Boundaries that will be overlaid
-normal_plot_path <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. Templates/EucVision LAScatalog Boundaries/Normal Plot Boundaries.shp"
+normal_plot_path <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/2. Plot Boundaries/Normal Plot Boundaries.shp"
 normal_plots <- st_read(normal_plot_path, quiet = TRUE)
 
 # Directory to save the temporary clipped PNGs and the final video outputs

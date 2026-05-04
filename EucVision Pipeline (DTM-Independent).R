@@ -62,7 +62,7 @@ for (dir in c(clipped_dir, classified_dir, normalised_dir, chm_dir, metrics_dir)
 # 3. Spatial Data Loading & Boundary Definition ####
 # ──────────────────────────────────────────────────────────────────────────────
 # Load individual plot boundary shapefiles and sort them chronologically/spatially by ID
-plots_buffered_unsorted <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. Templates/EucVision LAScatalog Boundaries/LAScatalog Plot Boundaries.shp")
+plots_buffered_unsorted <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/1. LAScatalog Plot Boundaries/LAScatalog Plot Boundaries.shp")
 plots <- plots_buffered_unsorted[order(plots_buffered_unsorted$id), ]
 
 plan(multisession, workers = 2)

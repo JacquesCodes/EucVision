@@ -44,7 +44,7 @@ for (dir in c(denoised_dir, classified_dir, dtm_dir)) {
 # 3. Spatial Data Loading & Boundary Definition ####
 # ──────────────────────────────────────────────────────────────────────────────
 # Load your final mask boundary to cookie-cut the site at the very end
-boundary <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. Templates/EucVision LAScatalog Boundaries/IMPACT Plot & Compartment Boundaries 2048.shp")
+boundary <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/4. IMPACT Plot & Compartment Boundaries/IMPACT Plot & Compartment Boundaries EPSG 2048.shp")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 4. Noise Removal (Statistical Outlier Removal) ####

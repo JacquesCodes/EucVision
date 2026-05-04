@@ -54,8 +54,12 @@ trees <- trees %>%
   select(-any_of(c("grop_ld", "group_ulid", "N_GM", "id", "N_FG", "N_BG", "BBox")))
 
 # --- LOAD CANOPY HEIGHT MODEL (CHM) ---
-# Read in the pre-processed Canopy Height Model (using the virtual raster reference)
-ctg_chm <- rast(paste0("E:/Remote Sensing Media/", date_folder, "/07. Canopy Height Models/rasterize_canopy.vrt"))
+# Read in the pre-processed and clamped Canopy Height Model
+ctg_chm <- rast(paste0("E:/Remote Sensing Media/", date_folder, "/07. Canopy Height Models/Master_Site_CHM_Single_", file_date_safe, ".tif"))
+
+# # --- LOAD CANOPY HEIGHT MODEL (CHM) ---
+# # Read in the pre-processed Canopy Height Model (using the virtual raster reference)
+# ctg_chm <- rast(paste0("E:/Remote Sensing Media/", date_folder, "/07. Canopy Height Models/rasterize_canopy.vrt"))
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 4. CHM & Species Visualization ####

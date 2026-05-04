@@ -72,7 +72,7 @@ if (!is.null(target_date_override)) {
 print("Loading static spatial data and initializing parallel processing...")
 
 # st_read loads the vector data. quiet = TRUE suppresses messy console output.
-plots_buffered_unsorted <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. Templates/EucVision LAScatalog Boundaries/LAScatalog Plot Boundaries.shp", quiet = TRUE)
+plots_buffered_unsorted <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/1. LAScatalog Plot Boundaries/LAScatalog Plot Boundaries.shp")
 
 # Enforce numeric sorting by the 'id' column to guarantee consistent processing order
 plots <- plots_buffered_unsorted[order(plots_buffered_unsorted$id), ]
