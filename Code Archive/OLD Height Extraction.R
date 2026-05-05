@@ -28,7 +28,7 @@ library(exactextractr)
 # ──────────────────────────────────────────────────────────────────────────────
 # === CONFIGURE PATHS ===
 # Change this single variable for each new batch!
-date_folder <- "23. 13 April 2026"
+date_folder <- "03. 30 October 2025"
 
 # Extract the date part and create a safe filename format
 # (e.g., "17. 02 March 2026" -> "02_March_2026")
@@ -41,12 +41,6 @@ file_date_safe <- gsub(" ", "_", file_date)
 # --- LOAD TREE POLYGONS ---
 path_trees <- paste0("E:/Remote Sensing Media/", date_folder, "/08. Crown Polygons/Crown_Polygons_", file_date_safe, ".shp")
 trees <- st_read(path_trees)
-
-# Validate and enforce the correct Coordinate Reference System (EPSG: 2048)
-if (is.na(st_crs(trees)$epsg) || st_crs(trees)$epsg != 2048) {
-  trees <- st_transform(trees, 2048)
-  message("Transformed CRS to 2048 successfully.")
-}
 
 # Clean tree geometry dataset by removing unnecessary metadata columns
 # This prevents duplicate name errors and ESRI shapefile driver issues during export

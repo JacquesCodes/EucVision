@@ -9,7 +9,7 @@
 #              point cloud datasets. It iteratively clips raw point clouds to 
 #              plot boundaries, normalizes them against an ultimate baseline DTM, 
 #              generates Canopy Height Models (CHMs), extracts maximum tree 
-#              heights, and optionally cleans up intermediate files to save space.
+#              heights, and enforces strict EPSG:2048 CRS on metric outputs.
 # ──────────────────────────────────────────────────────────────────────────────
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -26,6 +26,9 @@ library(stringr)         # String manipulation for file paths
 library(gstat)           # Spatial interpolation (often used in DTM/CHM generation)
 library(geometry)        # Mesh and polygon geometry functions
 library(sp)              # Legacy spatial framework (required by some older lidR functions)
+
+# The strict, exact OGC Well-Known Text (WKT) for EPSG:2048 to force the South/West axis fix
+pure_epsg_2048_wkt <- 'PROJCS["Hartebeesthoek94 / Lo19",GEOGCS["Hartebeesthoek94",DATUM["Hartebeesthoek94",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6148"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4148"]],PROJECTION["Transverse_Mercator"],PARAMETER["latitude_of_origin",0],PARAMETER["central_meridian",19],PARAMETER["scale_factor",1],PARAMETER["false_easting",0],PARAMETER["false_northing",0],UNIT["metre",1,AUTHORITY["EPSG","9001"]],AXIS["Southing",SOUTH],AXIS["Westing",WEST],AUTHORITY["EPSG","2048"]]'
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 2. Configuration & Batch Management ####
@@ -136,13 +139,9 @@ for (folder_path in dataset_folders) {
     next
   }
   
-  # Load the polygons and forcefully assign the local Hartebeesthoek94 / Lo19 CRS (EPSG:2048)
-  trees <- st_read(crown_shp_path, quiet = TRUE)
-  if (is.na(st_crs(trees)$epsg) || st_crs(trees)$epsg != 2048) {
-    trees <- st_transform(trees, 2048)
-  }
   # select(-any_of()) strips out legacy tracking columns to keep the final dataframe clean
-  trees <- trees %>% select(-any_of(c("group_ulid", "N_GM", "id", "N_FG", "N_BG", "BBox")))
+  trees <- st_read(crown_shp_path, quiet = TRUE) %>% 
+    select(-any_of(c("group_ulid", "N_GM", "id", "N_FG", "N_BG", "BBox")))
   
   # ────────────────────────────────────────────────────────────────────────────
   # 5. Point Cloud Cropping ####
@@ -259,11 +258,19 @@ for (folder_path in dataset_folders) {
   # writeRaster writes out the final, stitched, clamped CHM image
   terra::writeRaster(site_chm_clamped, filename = single_chm_path, overwrite = TRUE)
   
+  # Define output paths for metric files
+  out_shp_path <- file.path(metrics_dir, paste0("Crown_Metrics_", file_date_safe, ".shp"))
+  out_csv_path <- file.path(metrics_dir, paste0("Crown_Metrics_", file_date_safe, ".csv"))
+  
   # st_write exports the updated polygons (now containing Tree_Height). delete_dsn = TRUE allows overwriting.
-  st_write(trees, file.path(metrics_dir, paste0("Crown_Metrics_", file_date_safe, ".shp")), delete_dsn = TRUE, quiet = TRUE)
+  st_write(trees, out_shp_path, delete_dsn = TRUE, quiet = TRUE)
+  
+  # --- INJECT PURE EPSG:2048 WKT INTO .PRJ FILE ---
+  prj_path <- sub("\\.shp$", ".prj", out_shp_path, ignore.case = TRUE)
+  writeLines(pure_epsg_2048_wkt, prj_path)
   
   # st_drop_geometry strips the spatial mapping data so the dataframe can be written to a clean, lightweight CSV
-  write.csv(st_drop_geometry(trees), file.path(metrics_dir, paste0("Crown_Metrics_", file_date_safe, ".csv")), row.names = FALSE)
+  write.csv(st_drop_geometry(trees), out_csv_path, row.names = FALSE)
   toc()
   
   # ────────────────────────────────────────────────────────────────────────────

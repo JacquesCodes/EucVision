@@ -24,7 +24,7 @@ print("Initiating Spatial Data Merging & CSV Integration...")
 # ──────────────────────────────────────────────────────────────────────────────
 # === CONFIGURE PATHS ===
 # Change this single variable for each new batch to process the correct folder!
-date_folder <- "21. 31 March 2026"
+date_folder <- "12. 22 January 2026"
 
 # String manipulation for file naming
 # Removes the leading folder number (e.g., "17. 02 March 2026" -> "02 March 2026")
@@ -119,7 +119,7 @@ if(nrow(csv_data) != nrow(combined_sf)) {
 combined_sf <- bind_cols(csv_data, combined_sf) %>% st_as_sf()
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 7. Export Processed Data ####
+# 7. Export Processed Data & Enforce CRS ####
 # ──────────────────────────────────────────────────────────────────────────────
 print("Writing finalized shapefiles to disk...")
 
@@ -128,7 +128,21 @@ print("Writing finalized shapefiles to disk...")
 st_write(combined_sf, output_shp, append = FALSE, quiet = TRUE)
 st_write(combined_sf, base_output_file, append = FALSE, quiet = TRUE)
 
-print(paste("- Teams Backup successfully saved to:", output_shp))
-print(paste("- External SSD successfully saved to:", base_output_file))
+# --- INJECT PURE EPSG:2048 WKT INTO .PRJ FILES ---
+print("Enforcing strict EPSG:2048 CRS on output .prj files...")
+
+# The strict, exact OGC Well-Known Text (WKT) for EPSG:2048
+pure_epsg_2048_wkt <- 'PROJCS["Hartebeesthoek94 / Lo19",GEOGCS["Hartebeesthoek94",DATUM["Hartebeesthoek94",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6148"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4148"]],PROJECTION["Transverse_Mercator"],PARAMETER["latitude_of_origin",0],PARAMETER["central_meridian",19],PARAMETER["scale_factor",1],PARAMETER["false_easting",0],PARAMETER["false_northing",0],UNIT["metre",1,AUTHORITY["EPSG","9001"]],AXIS["Southing",SOUTH],AXIS["Westing",WEST],AUTHORITY["EPSG","2048"]]'
+
+# Dynamically generate the .prj file paths by replacing the .shp extension
+prj_teams <- sub("\\.shp$", ".prj", output_shp, ignore.case = TRUE)
+prj_ssd <- sub("\\.shp$", ".prj", base_output_file, ignore.case = TRUE)
+
+# Overwrite the newly created ESRI-style .prj files with the strict EPSG string
+writeLines(pure_epsg_2048_wkt, prj_teams)
+writeLines(pure_epsg_2048_wkt, prj_ssd)
+
+print(paste("- Teams Backup successfully saved and labeled to:", output_shp))
+print(paste("- External SSD successfully saved and labeled to:", base_output_file))
 print("Pipeline Complete!")
 toc()
