@@ -74,9 +74,9 @@ folders <- list.dirs(base_dir, recursive = FALSE)
 exclude_list <- c("000. Projects",
                   "00. Baseline DTM",
                   "00. Dataset Template",
-                  "01. 25 February 2025", 
-                  "02. 01 September 2025",
-                  "03. 30 October 2025",
+                  # "01. 25 February 2025", 
+                  # "02. 01 September 2025",
+                  # "03. 30 October 2025",
                   "17. 03 March 2026 (Multispectral)",
                   "20. 24 March 2026 (Multispectral)")
 
@@ -126,21 +126,12 @@ for (folder_path in dataset_folders) {
     
     ortho <- rast(tif_file)
     
-    # --- CRS & SOUTH AFRICAN AXIS FIX FOR PLOT CROPPING SHAPE ---
+    # --- CRS FIX FOR PLOT CROPPING SHAPE ---
     plot_shp_proj <- plot_shp
     
-    # Ensure the bounding box shape matches the raster's CRS
+    # Safely assign the raster's metadata to the shapefile
     if (st_crs(plot_shp_proj) != st_crs(ortho)) {
-      plot_shp_proj <- suppressWarnings(st_transform(plot_shp_proj, st_crs(ortho)))
-    }
-    
-    rast_xmin <- ext(ortho)[1]
-    plot_xmin <- st_bbox(plot_shp_proj)[1]
-    
-    # Fix spatial flipping (Common issue with South African projected coordinates)
-    if (sign(rast_xmin) != sign(plot_xmin)) {
-      st_geometry(plot_shp_proj) <- st_geometry(plot_shp_proj) * -1
-      st_crs(plot_shp_proj) <- st_crs(ortho) 
+      st_crs(plot_shp_proj) <- st_crs(ortho)
     }
     
     plot_vect_proj <- vect(plot_shp_proj)
@@ -163,19 +154,12 @@ for (folder_path in dataset_folders) {
     if (exists("normal_plots") && nrow(normal_plots) > 0) {
       normal_plots_proj <- normal_plots
       
-      # 1. Match CRS
+      # 1. Safely assign CRS metadata
       if (st_crs(normal_plots_proj) != st_crs(ortho)) {
-        normal_plots_proj <- suppressWarnings(st_transform(normal_plots_proj, st_crs(ortho)))
-      }
-      
-      # 2. Check for SA Axis Flip
-      normal_xmin <- st_bbox(normal_plots_proj)[1]
-      if (sign(rast_xmin) != sign(normal_xmin)) {
-        st_geometry(normal_plots_proj) <- st_geometry(normal_plots_proj) * -1
         st_crs(normal_plots_proj) <- st_crs(ortho)
       }
       
-      # 3. Intersect with the viewing extent to only draw what is on-screen
+      # 2. Intersect with the viewing extent to only draw what is on-screen
       normal_plots_cropped <- suppressWarnings(st_intersection(normal_plots_proj, plot_shp_proj))
     }
     
@@ -184,19 +168,12 @@ for (folder_path in dataset_folders) {
     if (file.exists(crown_shp_path)) {
       crowns <- st_read(crown_shp_path, quiet = TRUE)
       
-      # 1. Match CRS
+      # 1. Safely assign CRS metadata
       if (st_crs(crowns) != st_crs(ortho)) {
-        crowns <- suppressWarnings(st_transform(crowns, st_crs(ortho)))
-      }
-      
-      # 2. Check for SA Axis Flip
-      crown_xmin <- st_bbox(crowns)[1]
-      if (sign(rast_xmin) != sign(crown_xmin)) {
-        st_geometry(crowns) <- st_geometry(crowns) * -1
         st_crs(crowns) <- st_crs(ortho)
       }
       
-      # 3. Intersect crowns with the plot boundary
+      # 2. Intersect crowns with the plot boundary
       crowns_cropped <- suppressWarnings(st_intersection(crowns, plot_shp_proj))
     } else {
       print("  -> No crown polygons found for this date. Proceeding without crown overlay.")
@@ -270,8 +247,8 @@ if (length(clipped_images) > 0) {
   
   video_path <- file.path(output_dir, "Timelapse.mp4")
   
-  # Compile all generated PNGs into a 1 FPS video
-  av_encode_video(clipped_images, output = video_path, framerate = 10)
+  # Compile all generated PNGs into a 10 FPS video
+  av_encode_video(clipped_images, output = video_path, framerate = 5)
   
   print(paste("High-Res Time-lapse video saved to:", video_path))
   

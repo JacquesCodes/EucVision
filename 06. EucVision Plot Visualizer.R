@@ -35,10 +35,10 @@ library(rgl)
 # ──────────────────────────────────────────────────────────────────────────────
 # === CONFIGURE BATCH AND PLOT ===
 # Change this single variable for each new batch!
-date_folder <- "07. December 2025 (TLS)"
+date_folder <- "20. 23 March 2026"
 
 # Define the specific plot number to visualize
-Number <- 17
+Number <- "17"
 
 # Extract the date part and create a safe filename format
 # (e.g., "17. 02 March 2026" -> "02_March_2026")
@@ -111,16 +111,17 @@ if (file.exists(path_chm)) {
 path_trees <- paste0(myPath, "08. Crown Polygons/Crown_Polygons_", file_date_safe, ".shp")
 
 if (file.exists(path_trees)) {
-  trees <- st_read(path_trees)
+  trees <- st_read(path_trees, quiet = TRUE)
   
-  # Crucial CRS fix to prevent "spatial index out of range" rendering errors!
-  if (is.na(st_crs(trees)$epsg) || st_crs(trees)$epsg != 2048) {
-    trees <- st_transform(trees, 2048)
-    message("  -> Transformed Crown Polygons CRS to EPSG:2048")
+  # --- APPLIED SUCCESSFUL FIX HERE ---
+  # The CRS Fix: Assign raster metadata to the shapefile
+  if (!is.null(las_chm)) {
+    st_crs(trees) <- st_crs(las_chm)
   }
   
   # Filter for just the target plot we are currently visualizing
-  PlotTrees <- trees[trees$Plot == paste0("Plot_", Number),]
+  # Using both numeric and character checks to be perfectly safe based on the .dbf reading
+  PlotTrees <- trees[trees$Plot == Number | trees$Plot == as.numeric(Number),]
   message("Loaded and filtered Crown Polygons for Plot ", Number)
   
 } else {
@@ -154,7 +155,23 @@ if (!is.null(las_normalised)) {
 
 # 4.4 Plot 2D Canopy Height Model (CHM)
 if (!is.null(las_chm)) {
-  plot(las_chm, col = height.colors(50))
+  # --- APPLIED SUCCESSFUL FIX HERE ---
+  if (!is.null(PlotTrees) && nrow(PlotTrees) > 0) {
+    # Crop the raster to the plot boundary so we can actually see the trees
+    zoomed_chm <- crop(las_chm, ext(PlotTrees))
+    
+    # Open a fresh plotting window so it doesn't overwrite your 3D plots
+    dev.new()
+    
+    # Plot Base Image
+    plot(zoomed_chm, col = height.colors(50), main = paste("Plot", Number, "CHM & Crown Overlay"))
+    
+    # Add Polygons
+    plot(st_geometry(PlotTrees), add = TRUE, border = "red", lwd = 2)
+  } else {
+    # Fallback if no polygons exist for this plot
+    plot(las_chm, col = height.colors(50), main = paste("Full Site CHM (Plot", Number, "Polygons Not Found)"))
+  }
 }
 
 # ──────────────────────────────────────────────────────────────────────────────

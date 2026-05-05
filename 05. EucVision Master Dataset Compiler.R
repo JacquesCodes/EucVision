@@ -50,7 +50,6 @@ main_folders <- list.dirs(src_base_dir, recursive = FALSE)
 # Remove the specified TLS folder from the list of directories to process
 folder_to_exclude <- "07. December 2025 (TLS)"
 main_folders <- main_folders[basename(main_folders) != folder_to_exclude]
-# ------------------------
 
 csv_list <- list()
 
@@ -64,7 +63,8 @@ for (folder in main_folders) {
   formatted_date <- NA
   if (!is.na(date_match)) {
     parsed_date <- as.Date(date_match, format="%d %B %Y")
-    formatted_date <- format(parsed_date, "%d-%b-%y")
+    # --- CHANGED: Now outputs format like 25-02-2025 ---
+    formatted_date <- format(parsed_date, "%d-%m-%Y") 
   }
   
   crown_metrics_path <- file.path(folder, "09. Crown Metrics")
@@ -124,6 +124,10 @@ if (length(csv_list) > 0) {
   if (file.exists(field_measurements_csv)) {
     cat("Found '02. Field Measurements.csv'. Running FULL JOIN...\n")
     other_data <- read_csv(field_measurements_csv, show_col_types = FALSE)
+    
+    # Round the Tree column to 2 decimal places to fix floating-point mismatches
+    master_dataset <- master_dataset %>% mutate(Tree = round(as.numeric(Tree), 2))
+    other_data <- other_data %>% mutate(Tree = round(as.numeric(Tree), 2))
     
     # Safely rename columns in the external dataset to prevent .x and .y duplicates
     if ("Tree_Height" %in% names(other_data)) {
@@ -193,7 +197,7 @@ if (length(csv_list) > 0) {
   # ────────────────────────────────────────────────────────────────────────────
   cat("Organizing dataset chronologically...\n")
   master_dataset <- master_dataset %>%
-    mutate(Temp_Date = as.Date(Date, format="%d-%b-%y")) %>%
+    mutate(Temp_Date = as.Date(Date, format="%d-%m-%Y")) %>% 
     arrange(Temp_Date, Compartment, Line, Plot, Tree) %>%
     select(-Temp_Date)
   

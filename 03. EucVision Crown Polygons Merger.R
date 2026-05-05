@@ -108,6 +108,9 @@ print("Attaching master CSV template to spatial geometries...")
 # Load the master dataset template
 csv_data <- read.csv(csv_path)
 
+# --- FIX: Force the Tree column to exactly 2 decimal places to prevent DBF precision errors
+csv_data <- csv_data %>% mutate(Tree = round(Tree, 2))
+
 # Data validation check to ensure shapefiles and CSV align 1:1 before binding
 if(nrow(csv_data) != nrow(combined_sf)) {
   warning("MISMATCH DETECTED: The number of rows in the CSV (", nrow(csv_data), 

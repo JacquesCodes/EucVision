@@ -37,6 +37,7 @@ base_dir <- "E:/Remote Sensing Media"
 baseline_dtm_path <- "E:/Remote Sensing Media/00. Baseline DTM/Ultimate_Ensemble_Baseline_DTM.tif"
 
 # Load the ultimate baseline surface model into memory as a SpatRaster
+# (We will use this as the MASTER CRS truth for all vector layers)
 baseline_dtm <- rast(baseline_dtm_path)
 
 # --- RUN CONTROLS ---
@@ -75,7 +76,11 @@ if (!is.null(target_date_override)) {
 print("Loading static spatial data and initializing parallel processing...")
 
 # st_read loads the vector data. quiet = TRUE suppresses messy console output.
-plots_buffered_unsorted <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/1. LAScatalog Plot Boundaries/LAScatalog Plot Boundaries.shp")
+plots_buffered_unsorted <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/1. LAScatalog Plot Boundaries/LAScatalog Plot Boundaries.shp", quiet = TRUE)
+
+# --- APPLIED CRS FIX 1: THE CLIPPING BOUNDARIES ---
+# Force the clipping polygons to perfectly inherit the master DTM's spatial grid
+st_crs(plots_buffered_unsorted) <- st_crs(baseline_dtm)
 
 # Enforce numeric sorting by the 'id' column to guarantee consistent processing order
 plots <- plots_buffered_unsorted[order(plots_buffered_unsorted$id), ]
@@ -141,7 +146,12 @@ for (folder_path in dataset_folders) {
   
   # select(-any_of()) strips out legacy tracking columns to keep the final dataframe clean
   trees <- st_read(crown_shp_path, quiet = TRUE) %>% 
+    mutate(Tree = round(Tree, 2)) %>%  # Force 2 decimal precision ---
     select(-any_of(c("group_ulid", "N_GM", "id", "N_FG", "N_BG", "BBox")))
+  
+  # --- APPLIED CRS FIX 2: THE CROWN POLYGONS ---
+  # Force the tree polygons to inherit the master grid immediately upon loading
+  st_crs(trees) <- st_crs(baseline_dtm)
   
   # ────────────────────────────────────────────────────────────────────────────
   # 5. Point Cloud Cropping ####
@@ -244,6 +254,7 @@ for (folder_path in dataset_folders) {
   
   # exact_extract calculates the "max" pixel value (tallest canopy point) falling inside each tree polygon
   # It is vastly faster and more memory-efficient than standard GIS extract functions.
+  # (No st_crs fix needed here because we safely applied it when the trees were loaded in Section 4!)
   trees$Tree_Height <- exact_extract(site_chm_vrt, trees, 'max')
   
   # is.finite() strips out completely empty polygons that might have returned NA or Inf.

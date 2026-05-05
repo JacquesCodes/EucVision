@@ -102,11 +102,17 @@ for (folder_path in dataset_folders) {
   
   # Load polygons and clean columns
   trees <- st_read(path_trees, quiet = TRUE)
+  
+  # Force the Tree column to exactly 2 decimal places and drop unnecessary columns
   trees <- trees %>%
+    mutate(Tree = round(Tree, 2)) %>%
     select(-any_of(c("grop_ld", "group_ulid", "N_GM", "id", "N_FG", "N_BG", "BBox")))
   
   # Load CHM
   ctg_chm <- rast(path_chm)
+  
+  # Ensure Shapefiles' CRS are seen as EPSG:2048 in R
+  st_crs(trees) <- st_crs(ctg_chm)
   
   # Extract exact max tree height
   print("Running exact_extract spatial analysis...")
