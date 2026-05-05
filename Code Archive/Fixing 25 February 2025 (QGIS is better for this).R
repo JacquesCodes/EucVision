@@ -1,7 +1,7 @@
 library(terra)
 
 # 1. Load the skewed February raster
-skewed_ortho <- rast("E:/Remote Sensing Media/01. 25 February 2025/01. Orthomosaics/25 February 2025 Cropped.tif")
+skewed_ortho <- rast("E:/Remote Sensing Media/01. 25 February 2025/02. Digital Surface Models/LFDSMFeb25-05cm.tif")
 
 # 2. Create the data frame of your stable tie points (in EPSG:4326)
 pts_df <- data.frame(
@@ -37,4 +37,4 @@ print(paste("Fixed Y offset in meters:", round(dy, 3)))
 aligned_ortho <- shift(skewed_ortho, dx = dx, dy = dy)
 
 # 8. Export the correctly aligned orthomosaic
-writeRaster(aligned_ortho, "E:/Remote Sensing Media/01. 25 February 2025/01. Orthomosaics/25 February 2025 Aligned_Fixed.tif", overwrite=TRUE)
+writeRaster(aligned_ortho, "E:/Remote Sensing Media/01. 25 February 2025/02. Digital Surface Models/DSM_25_February_2025.tif", overwrite=TRUE)

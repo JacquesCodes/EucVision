@@ -27,16 +27,19 @@ library(terra)
 # 2. Configuration & Path Management ####
 # ──────────────────────────────────────────────────────────────────────────────
 # Define your "Golden Baseline" date where ground is most visible
-date_folder <- "05. 14 November 2025"
+date_folder <- "01. 25 February 2025"
 file_date_safe <- gsub(" ", "_", sub("^\\d+\\.\\s*", "", date_folder))
 
 las_folder <- paste0("E:/Remote Sensing Media/", date_folder, "/03. Point Clouds/")
+
+# NEW: Directory for the cropped point clouds
+cropped_dir <- paste0("E:/Remote Sensing Media/", date_folder, "/03b. Point Clouds Cropped/")
 denoised_dir <- paste0("E:/Remote Sensing Media/", date_folder, "/04b. Point Clouds Denoised/")
 classified_dir <- paste0("E:/Remote Sensing Media/", date_folder, "/05. Point Clouds Ground Classified/")
 dtm_dir <- paste0("E:/Remote Sensing Media/", date_folder, "/05b. Baseline Plot DTMs/")
 
-# Ensure output directories exist
-for (dir in c(denoised_dir, classified_dir, dtm_dir)) {
+# Ensure all output directories exist
+for (dir in c(cropped_dir, denoised_dir, classified_dir, dtm_dir)) {
   if (!dir.exists(dir)) dir.create(dir, recursive = TRUE)
 }
 
@@ -47,12 +50,36 @@ for (dir in c(denoised_dir, classified_dir, dtm_dir)) {
 boundary <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/4. IMPACT Plot & Compartment Boundaries/IMPACT Plot & Compartment Boundaries EPSG 2048.shp")
 
 # ──────────────────────────────────────────────────────────────────────────────
+# 3.5. Point Cloud Cropping (Fixing Sparse Edges) ####
+# ──────────────────────────────────────────────────────────────────────────────
+plan(multisession, workers = 6)
+
+# Load the new OAL boundary to clip the raw data
+oal_boundary <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/5. IMPACT OAL Boundaries/IMPACT Boundaries EPSG 2048.shp")
+
+# Buffer the boundary slightly (5m) to ensure we don't create artificial edge artifacts inside the study plots
+oal_boundary_buffered <- st_buffer(oal_boundary, 5)
+
+# Load the unclipped raw point clouds
+ctg_raw_unclipped <- readLAScatalog(las_folder)
+
+# Setup engine to write cropped tiles
+opt_output_files(ctg_raw_unclipped) <- paste0(cropped_dir, "Tile_{XLEFT}_{YBOTTOM}_cropped")
+opt_chunk_size(ctg_raw_unclipped) <- 100
+
+tic()
+print("Cropping raw point clouds to OAL Boundary to remove sparse edges...")
+# clip_roi extracts only the points inside the shapefile and writes them to the cropped_dir
+invisible(clip_roi(ctg_raw_unclipped, oal_boundary_buffered))
+toc()
+
+# ──────────────────────────────────────────────────────────────────────────────
 # 4. Noise Removal (Statistical Outlier Removal) ####
 # ──────────────────────────────────────────────────────────────────────────────
 plan(multisession, workers = 6)
 
-# Load the raw point clouds directly
-ctg_raw <- readLAScatalog(las_folder)
+# NEW: Load the dense, cropped point clouds instead of the raw ones
+ctg_raw <- readLAScatalog(cropped_dir)
 
 # --- CRITICAL SITE-LEVEL ENGINE SETTINGS ---
 opt_independent_files(ctg_raw) <- FALSE   # Ignores original file overlaps

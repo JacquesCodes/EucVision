@@ -45,13 +45,12 @@ baseline_dtm <- rast(baseline_dtm_path)
 
 # --- RUN CONTROLS ---
 # target_date_override <- NULL
-target_date_override <- "07. 28 November 2025"
+target_date_override <- "01. 25 February 2025"
 
 # --- EXCLUDE LIST ---
 exclude_list <- c("000. Projects",
                   "00. Baseline DTM",
                   "00. Dataset Template", 
-                  "01. 25 February 2025",
                   "17. 03 March 2026 (Multispectral)",
                   "20. 24 March 2026 (Multispectral)")
 
@@ -73,11 +72,11 @@ dest_backup_dir <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skrips
 # ──────────────────────────────────────────────────────────────────────────────
 # 3. Static Spatial Data Loading ####
 # ──────────────────────────────────────────────────────────────────────────────
-plots_buffered_unsorted <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. Templates/EucVision LAScatalog Boundaries/LAScatalog Plot Boundaries.shp", quiet = TRUE)
+plots_buffered_unsorted <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/1. LAScatalog Plot Boundaries/LAScatalog Plot Boundaries.shp")
 plots <- plots_buffered_unsorted[order(plots_buffered_unsorted$id), ]
 
 # NEW: Load the Impact Plot & Compartment Boundaries to mask Top and Bottom DSMs
-impact_bounds <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. Templates/EucVision LAScatalog Boundaries/IMPACT Plot & Compartment Boundaries 2048.shp", quiet = TRUE)
+impact_bounds <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/4. IMPACT Plot & Compartment Boundaries/IMPACT Plot & Compartment Boundaries EPSG 2048.shp", quiet = TRUE)
 if (is.na(st_crs(impact_bounds)$epsg) || st_crs(impact_bounds)$epsg != 2048) {
   impact_bounds <- st_transform(impact_bounds, 2048)
 }
@@ -159,33 +158,50 @@ for (folder_path in dataset_folders) {
   r_bot <- if(!is.null(bot_dsm_path)) rast(bot_dsm_path) else NULL
   
   if (is.null(r_top) && is.null(r_bot)) {
-    print("-> SKIPPED: No valid DSMs matched the criteria.")
-    next
-  }
-  
-  print("Cropping and masking DSMs to compartment boundaries...")
-  
-  # Crop (reduces extent) and mask (turns pixels outside boundary to NA)
-  if (!is.null(r_top)) r_top <- terra::crop(r_top, top_bound, mask = TRUE)
-  if (!is.null(r_bot)) r_bot <- terra::crop(r_bot, bot_bound, mask = TRUE)
-  
-  if (!is.null(r_top) && !is.null(r_bot)) {
-    print("Aligning raster grids and mosaicing Top and Bottom DSMs...")
+    if (length(all_dsm_files) == 1) {
+      print("-> Found a single unified DSM. Bypassing Top/Bottom mosaicing...")
+      site_dsm <- rast(all_dsm_files[1])[[1]]
+      
+      # Force CRS alignment to Baseline DTM just in case
+      if (terra::crs(site_dsm) != terra::crs(baseline_dtm)) {
+        print("Reprojecting unified DSM to match Baseline DTM CRS. This may take a moment...")
+        site_dsm <- terra::project(site_dsm, baseline_dtm)
+      }
+      
+      # Crop and mask using the combined overall impact boundaries
+      print("Cropping and masking unified DSM to overall compartment boundaries...")
+      impact_vect <- terra::vect(impact_bounds) 
+      site_dsm <- terra::crop(site_dsm, impact_vect, mask = TRUE)
+      
+    } else {
+      print("-> SKIPPED: No valid Top/Bottom DSMs matched, and multiple unrecognized files exist.")
+      next
+    }
+  } else {
+    # --- ORIGINAL LOGIC: Handle split Top/Bottom DSMs ---
+    print("Cropping and masking DSMs to compartment boundaries...")
     
-    # 1. Expand the Top DSM's bounding box to include the Bottom DSM's area
-    r_top_extended <- terra::extend(r_top, r_bot)
+    # Crop (reduces extent) and mask (turns pixels outside boundary to NA)
+    if (!is.null(r_top)) r_top <- terra::crop(r_top, top_bound, mask = TRUE)
+    if (!is.null(r_bot)) r_bot <- terra::crop(r_bot, bot_bound, mask = TRUE)
     
-    # 2. Resample the Bottom DSM to fit this new expanded, perfectly aligned grid
-    r_bot_aligned <- terra::resample(r_bot, r_top_extended, method = "bilinear")
-    
-    # 3. Mosaic them together seamlessly
-    # Using fun="max" or "mean" is safe here because overlapping pixels are now NAs due to the mask
-    site_dsm <- terra::mosaic(r_top_extended, r_bot_aligned, fun="mean")
-    
-  } else if (!is.null(r_top)) {
-    site_dsm <- r_top
-  } else if (!is.null(r_bot)) {
-    site_dsm <- r_bot
+    if (!is.null(r_top) && !is.null(r_bot)) {
+      print("Aligning raster grids and mosaicing Top and Bottom DSMs...")
+      
+      # 1. Expand the Top DSM's bounding box to include the Bottom DSM's area
+      r_top_extended <- terra::extend(r_top, r_bot)
+      
+      # 2. Resample the Bottom DSM to fit this new expanded, perfectly aligned grid
+      r_bot_aligned <- terra::resample(r_bot, r_top_extended, method = "bilinear")
+      
+      # 3. Mosaic them together seamlessly
+      site_dsm <- terra::mosaic(r_top_extended, r_bot_aligned, fun="mean")
+      
+    } else if (!is.null(r_top)) {
+      site_dsm <- r_top
+    } else if (!is.null(r_bot)) {
+      site_dsm <- r_bot
+    }
   }
   
   toc()
@@ -206,21 +222,19 @@ for (folder_path in dataset_folders) {
   tic("Metric extraction complete")
   print("Extracting metrics and exporting to '10. DSM - DTM = CHM'...")
   
+  trees <- st_transform(trees, st_crs(raw_chm))
+  
+  # Extract metrics
   trees$Tree_Height <- exact_extract(raw_chm, trees, 'max')
   
-  max_tree_height <- max(trees$Tree_Height[is.finite(trees$Tree_Height)], na.rm = TRUE)
-  dynamic_cap <- ceiling(max_tree_height)
-  print(paste("-> Dynamic CHM cap safely set to:", dynamic_cap, "meters"))
-  
-  site_chm_clamped <- terra::clamp(raw_chm, lower = 0, upper = dynamic_cap)
-  
-  terra::writeRaster(site_chm_clamped, filename = single_chm_path, overwrite = TRUE)
+  # BYPASSED DYNAMIC CLAMP - Writing raw CHM directly
+  terra::writeRaster(raw_chm, filename = single_chm_path, overwrite = TRUE)
   st_write(trees, file.path(out_dir, paste0("Crown_Metrics_RasterMath_", file_date_safe, ".shp")), delete_dsn = TRUE, quiet = TRUE)
   write.csv(st_drop_geometry(trees), file.path(out_dir, paste0("Crown_Metrics_RasterMath_", file_date_safe, ".csv")), row.names = FALSE)
   toc()
   
   # --- GARBAGE COLLECTION ---
-  rm(dsm_list, site_dsm, dtm_cropped, dtm_aligned, raw_chm, site_chm_clamped, trees, all_dsm_files)
+  rm(dsm_list, site_dsm, dtm_cropped, dtm_aligned, raw_chm, trees, all_dsm_files)
   gc()
 }
 
