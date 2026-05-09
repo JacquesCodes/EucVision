@@ -1,12 +1,14 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# EUCVISION: SPATIAL DATA MERGING & CSV INTEGRATION PIPELINE
+# EUCVISION: BATCH SPATIAL DATA MERGING & CSV INTEGRATION PIPELINE
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
 # Email: Jacques.Stellies@gmail.com
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
 # ──────────────────────────────────────────────────────────────────────────────
-# Description: Aggregates individual spatial plot shapefiles into a single 
-#              continuous spatial dataframe.
+# Description: Automates the batch processing of multiple dates. Aggregates 
+#              individual spatial plot shapefiles into a single continuous 
+#              spatial dataframe, applies temporal mortality filtering, and 
+#              exports the cleaned vectors. Includes shapefile routing overrides.
 # ──────────────────────────────────────────────────────────────────────────────
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -17,135 +19,197 @@ library(dplyr)   # Core package for data wrangling and piping
 library(tictoc)  # For tracking script execution time
 
 tic()
-print("Initiating Spatial Data Merging & CSV Integration...")
+print("Initiating Batch Spatial Data Merging & CSV Integration...")
+
+# Force English locale for consistent date parsing
+Sys.setlocale("LC_TIME", "C")
+
+# The strict, exact OGC Well-Known Text (WKT) for EPSG:2048 WKT
+pure_epsg_2048_wkt <- 'PROJCS["Hartebeesthoek94 / Lo19",GEOGCS["Hartebeesthoek94",DATUM["Hartebeesthoek94",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6148"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4148"]],PROJECTION["Transverse_Mercator"],PARAMETER["latitude_of_origin",0],PARAMETER["central_meridian",19],PARAMETER["scale_factor",1],PARAMETER["false_easting",0],PARAMETER["false_northing",0],UNIT["metre",1,AUTHORITY["EPSG","9001"]],AXIS["Southing",SOUTH],AXIS["Westing",WEST],AUTHORITY["EPSG","2048"]]'
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 2. Configuration & Path Management ####
+# 2. Configuration & Batch Management ####
 # ──────────────────────────────────────────────────────────────────────────────
-# === CONFIGURE PATHS ===
-# Change this single variable for each new batch to process the correct folder!
-date_folder <- "12. 22 January 2026"
-
-# String manipulation for file naming
-# Removes the leading folder number (e.g., "17. 02 March 2026" -> "02 March 2026")
-file_date <- sub("^\\d+\\.\\s*", "", date_folder)
-# Replaces spaces with underscores (e.g., "02 March 2026" -> "02_March_2026")
-file_date_safe <- gsub(" ", "_", file_date)
-
-# Define the base directories (Constant across batches)
+# Define the base directories
 base_input <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/03. QGIS Extracted data"
 base_output <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/04. QGIS Combined Output"
 csv_path <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data analysis/00. Dataset template.csv"
 
-# Dynamically construct the full input and output paths for the current batch
-input_folder <- file.path(base_input, date_folder)
-output_folder <- file.path(base_output, date_folder)
+# --- RUN CONTROLS ---
+# Set to a specific folder name to run only that dataset, or set to NULL for full batch.
+target_date_override <- NULL
 
-# Define final output paths for both internal Teams backups and the external SSD
-output_shp <- file.path(output_folder, paste0("Crown_Polygons_", file_date_safe, ".shp")) 
-base_output_file <- paste0("E:/Remote Sensing Media/", date_folder, "/08. Crown Polygons/Crown_Polygons_", file_date_safe, ".shp") 
+# --- EXCLUDE LIST ---
+exclude_list <- c("01. 25 February 2025",
+                  "07. December 2025 (TLS)")
 
-# ──────────────────────────────────────────────────────────────────────────────
-# 3. Directory Preparation ####
-# ──────────────────────────────────────────────────────────────────────────────
-print("Verifying output directories...")
+# Scan the base directory and filter for valid date folders
+folders <- list.dirs(base_input, recursive = FALSE)
+dataset_folders <- folders[grepl("^\\d{2}\\.", basename(folders)) & !basename(folders) %in% exclude_list]
 
-# Ensure the Teams backup output directory exists
-if (!dir.exists(output_folder)) dir.create(output_folder, recursive = TRUE)
-
-# Ensure the external SSD output directory exists
-ssd_dir <- dirname(base_output_file)
-if (!dir.exists(ssd_dir)) dir.create(ssd_dir, recursive = TRUE)
-
-# ──────────────────────────────────────────────────────────────────────────────
-# 4. Shapefile Loading & Sorting ####
-# ──────────────────────────────────────────────────────────────────────────────
-print("Scanning for shapefiles and enforcing numeric sorting...")
-
-# Fetch a list of all shapefiles in the target input folder
-shp_files <- list.files(input_folder, pattern = "\\.shp$", full.names = TRUE)
-
-# Safety check to prevent the script from running on empty directories
-if (length(shp_files) == 0) {
-  stop("CRITICAL ERROR: No shapefiles found in the input directory. Check path:\n", input_folder)
+if (!is.null(target_date_override)) {
+  dataset_folders <- dataset_folders[basename(dataset_folders) == target_date_override]
 }
 
-# --- CRITICAL: SORT FILES NUMERICALLY ---
-# Standard list.files sorts lexically (Plot 1, Plot 10, Plot 2). 
-# We must sort numerically (Plot 1, Plot 2 ... Plot 10) to align 1:1 with the CSV.
-plot_numbers <- as.numeric(gsub("\\D", "", basename(shp_files)))
-shp_files <- shp_files[order(plot_numbers)]
+# ──────────────────────────────────────────────────────────────────────────────
+# 3. CSV Spatial Baseline Locking ####
+# ──────────────────────────────────────────────────────────────────────────────
+# Load the master CSV baseline once into memory before the loop
+master_csv_data <- read.csv(csv_path) %>% mutate(Tree = round(as.numeric(Tree), 2))
+master_csv_data$Parsed_Death_Date <- as.Date(master_csv_data$Death_Date, format="%d-%m-%Y")
 
-print(paste("Found", length(shp_files), "shapefiles in", date_folder, "- Starting merge..."))
+# --- CRITICAL FIX: Lock the baseline to the 3144 shapefile features ---
+shapefile_baseline_date <- as.Date("2025-09-01")
+csv_shapefile_baseline <- master_csv_data %>%
+  filter(is.na(Parsed_Death_Date) | Parsed_Death_Date > shapefile_baseline_date)
+
+legacy_sf_count <- nrow(csv_shapefile_baseline) # This guarantees exactly 3144!
+print(paste("Global Spatial Baseline Set To:", legacy_sf_count, "trees."))
+
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 5. Spatial Data Merging ####
+# MASTER BATCH LOOP START ####
 # ──────────────────────────────────────────────────────────────────────────────
-# Read and combine all individual plot shapefiles into one continuous sf dataframe
-combined_sf <- lapply(shp_files, function(file) {
+for (folder_path in dataset_folders) {
   
-  # Read the shapefile silently to keep the console output clean
-  temp_sf <- st_read(file, quiet = TRUE)
+  date_folder <- basename(folder_path)
+  file_date <- sub("^\\d+\\.\\s*", "", date_folder)
+  file_date_safe <- gsub(" ", "_", file_date)
   
-  # Extract the raw plot name from the filename
-  plot_name <- tools::file_path_sans_ext(basename(file))
+  print("================================================================")
+  print(paste("PROCESSING DATASET:", date_folder))
+  print("================================================================")
   
-  # Add the plot name as a new column to trace feature origins
-  # Tagged as 'Plot_shp' to avoid namespace conflicts with the incoming CSV
-  temp_sf <- temp_sf %>% mutate(Plot_shp = plot_name) 
+  current_flight_date <- as.Date(file_date, format="%d %B %Y")
+  if(is.na(current_flight_date)) {
+    print(paste("-> WARNING: Date parsing failed. Skipping", date_folder))
+    next
+  }
   
-  return(temp_sf)
+  # ────────────────────────────────────────────────────────────────────────────
+  # 4. Shapefile Override Routing ####
+  # ────────────────────────────────────────────────────────────────────────────
+  shapefile_source_folder <- date_folder
   
-}) %>% 
-  # safely aggregates spatial data even if column structures vary slightly
-  bind_rows() 
-
-# ──────────────────────────────────────────────────────────────────────────────
-# 6. CSV Template Integration ####
-# ──────────────────────────────────────────────────────────────────────────────
-print("Attaching master CSV template to spatial geometries...")
-
-# Load the master dataset template
-csv_data <- read.csv(csv_path)
-
-# --- FIX: Force the Tree column to exactly 2 decimal places to prevent DBF precision errors
-csv_data <- csv_data %>% mutate(Tree = round(Tree, 2))
-
-# Data validation check to ensure shapefiles and CSV align 1:1 before binding
-if(nrow(csv_data) != nrow(combined_sf)) {
-  warning("MISMATCH DETECTED: The number of rows in the CSV (", nrow(csv_data), 
-          ") does not match the merged shapefile (", nrow(combined_sf), ").")
+  if (date_folder == "05. 14 November 2025") {
+    shapefile_source_folder <- "06. 17 November 2025"
+    print(paste("-> ROUTING OVERRIDE: Using donor shapefiles from", shapefile_source_folder))
+  } else if (date_folder == "19. 16 March 2026") {
+    shapefile_source_folder <- "18. 09 March 2026"
+    print(paste("-> ROUTING OVERRIDE: Using donor shapefiles from", shapefile_source_folder))
+  } else if (date_folder == "22. 08 April 2026") {
+    shapefile_source_folder <- "21. 31 March 2026"
+    print(paste("-> ROUTING OVERRIDE: Using donor shapefiles from", shapefile_source_folder))
+  } else if (date_folder == "23. 13 April 2026") {
+    shapefile_source_folder <- "21. 31 March 2026"
+    print(paste("-> ROUTING OVERRIDE: Using donor shapefiles from", shapefile_source_folder))
+  }
+  
+  # Dynamically construct paths
+  input_folder <- file.path(base_input, shapefile_source_folder)
+  output_folder <- file.path(base_output, date_folder)
+  
+  output_shp <- file.path(output_folder, paste0("Crown_Polygons_", file_date_safe, ".shp")) 
+  base_output_file <- paste0("E:/Remote Sensing Media/", date_folder, "/08. Crown Polygons/Crown_Polygons_", file_date_safe, ".shp") 
+  
+  if (!dir.exists(output_folder)) dir.create(output_folder, recursive = TRUE)
+  if (!dir.exists(dirname(base_output_file))) dir.create(dirname(base_output_file), recursive = TRUE)
+  
+  # ────────────────────────────────────────────────────────────────────────────
+  # 5. Shapefile Loading & Merging ####
+  # ────────────────────────────────────────────────────────────────────────────
+  shp_files <- list.files(input_folder, pattern = "\\.shp$", full.names = TRUE)
+  
+  if (length(shp_files) == 0) {
+    print(paste("-> WARNING: No shapefiles found in", input_folder, "- Skipping dataset."))
+    next
+  }
+  
+  # Sort files numerically
+  plot_numbers <- as.numeric(gsub("\\D", "", basename(shp_files)))
+  shp_files <- shp_files[order(plot_numbers)]
+  
+  combined_sf <- lapply(shp_files, function(file) {
+    temp_sf <- st_read(file, quiet = TRUE)
+    plot_name <- tools::file_path_sans_ext(basename(file))
+    temp_sf <- temp_sf %>% mutate(Plot_shp = plot_name) 
+    return(temp_sf)
+  }) %>% bind_rows() 
+  
+  # ────────────────────────────────────────────────────────────────────────────
+  # 6. Temporal Mortality Filtering ####
+  # ────────────────────────────────────────────────────────────────────────────
+  # Refresh the CSV baseline (the 3144 dataset) for this iteration
+  csv_data <- csv_shapefile_baseline
+  
+  # A tree is alive if it has no death date OR if its death date is AFTER the current flight
+  csv_data$Is_Alive <- is.na(csv_data$Parsed_Death_Date) | (csv_data$Parsed_Death_Date > current_flight_date)
+  
+  csv_alive <- csv_data %>% filter(Is_Alive)
+  alive_count <- nrow(csv_alive)
+  
+  print(paste("   Legacy Shapefile Baseline:", legacy_sf_count))
+  print(paste("   Alive on", file_date, ":", alive_count))
+  print(paste("   Trees flagged as Dead since baseline:", legacy_sf_count - alive_count))
+  
+  # ---------------------------------------------------------
+  # FAILSAFE 3: Backward compatibility check
+  # ---------------------------------------------------------
+  raw_sf_count <- nrow(combined_sf)
+  
+  if (raw_sf_count == legacy_sf_count) {
+    print("   -> Found legacy shapefiles (3144 features). Filtering dead geometries...")
+    combined_sf <- bind_cols(csv_data, combined_sf) %>% st_as_sf()
+    combined_sf <- combined_sf %>% filter(Is_Alive)
+    
+  } else if (raw_sf_count == alive_count) {
+    print("   -> Found updated shapefiles. Features match alive trees perfectly.")
+    combined_sf <- bind_cols(csv_alive, combined_sf) %>% st_as_sf()
+    
+  } else {
+    stop(paste("\nCRITICAL ERROR - FAILSAFE 3 TRIGGERED FOR", date_folder, 
+               "\nShapefile features (", raw_sf_count, ") do NOT match the alive trees (", alive_count, ").",
+               "\nBecause it does not match alive trees, it MUST be exactly the legacy baseline (", legacy_sf_count, ")."))
+  }
+  
+  # ---------------------------------------------------------
+  # FAILSAFE 1 & 2: Final Validation
+  # ---------------------------------------------------------
+  if (nrow(combined_sf) != alive_count) {
+    stop(paste("CRITICAL ERROR - FAILSAFE 1 TRIGGERED in", date_folder, "- Final count mismatch!"))
+  }
+  
+  csv_plot_counts <- csv_alive %>% group_by(Plot) %>% summarise(Expected = n(), .groups = "drop")
+  sf_plot_counts <- combined_sf %>% st_drop_geometry() %>% group_by(Plot) %>% summarise(Actual = n(), .groups = "drop")
+  plot_mismatch <- full_join(csv_plot_counts, sf_plot_counts, by="Plot") %>% filter(is.na(Expected) | is.na(Actual) | Expected != Actual)
+  
+  if (nrow(plot_mismatch) > 0) {
+    print(plot_mismatch)
+    stop(paste("CRITICAL ERROR - FAILSAFE 2 TRIGGERED in", date_folder, "- Plot alignment mismatch!"))
+  }
+  
+  combined_sf <- combined_sf %>% select(-Parsed_Death_Date, -Is_Alive, -Plot_shp)
+  
+  # ────────────────────────────────────────────────────────────────────────────
+  # 7. Export Processed Data & Enforce CRS ####
+  # ────────────────────────────────────────────────────────────────────────────
+  st_write(combined_sf, output_shp, append = FALSE, quiet = TRUE)
+  st_write(combined_sf, base_output_file, append = FALSE, quiet = TRUE)
+  
+  prj_teams <- sub("\\.shp$", ".prj", output_shp, ignore.case = TRUE)
+  prj_ssd <- sub("\\.shp$", ".prj", base_output_file, ignore.case = TRUE)
+  
+  writeLines(pure_epsg_2048_wkt, prj_teams)
+  writeLines(pure_epsg_2048_wkt, prj_ssd)
+  
+  print("-> Failsafes passed. Geometries filtered and exported.")
+  
+  # Clean up memory before the next loop
+  rm(combined_sf, csv_alive, csv_plot_counts, sf_plot_counts, plot_mismatch)
+  gc()
 }
 
-# Bind the standard CSV columns to the left side of the newly merged shapefile data
-# We recast the final object back to 'sf' to guarantee spatial properties survive
-combined_sf <- bind_cols(csv_data, combined_sf) %>% st_as_sf()
-
-# ──────────────────────────────────────────────────────────────────────────────
-# 7. Export Processed Data & Enforce CRS ####
-# ──────────────────────────────────────────────────────────────────────────────
-print("Writing finalized shapefiles to disk...")
-
-# Write the finalized shapefile to both the Teams folder and the SSD
-# append = FALSE ensures clean overwriting of existing files without throwing errors
-st_write(combined_sf, output_shp, append = FALSE, quiet = TRUE)
-st_write(combined_sf, base_output_file, append = FALSE, quiet = TRUE)
-
-# --- INJECT PURE EPSG:2048 WKT INTO .PRJ FILES ---
-print("Enforcing strict EPSG:2048 CRS on output .prj files...")
-
-# The strict, exact OGC Well-Known Text (WKT) for EPSG:2048
-pure_epsg_2048_wkt <- 'PROJCS["Hartebeesthoek94 / Lo19",GEOGCS["Hartebeesthoek94",DATUM["Hartebeesthoek94",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6148"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4148"]],PROJECTION["Transverse_Mercator"],PARAMETER["latitude_of_origin",0],PARAMETER["central_meridian",19],PARAMETER["scale_factor",1],PARAMETER["false_easting",0],PARAMETER["false_northing",0],UNIT["metre",1,AUTHORITY["EPSG","9001"]],AXIS["Southing",SOUTH],AXIS["Westing",WEST],AUTHORITY["EPSG","2048"]]'
-
-# Dynamically generate the .prj file paths by replacing the .shp extension
-prj_teams <- sub("\\.shp$", ".prj", output_shp, ignore.case = TRUE)
-prj_ssd <- sub("\\.shp$", ".prj", base_output_file, ignore.case = TRUE)
-
-# Overwrite the newly created ESRI-style .prj files with the strict EPSG string
-writeLines(pure_epsg_2048_wkt, prj_teams)
-writeLines(pure_epsg_2048_wkt, prj_ssd)
-
-print(paste("- Teams Backup successfully saved and labeled to:", output_shp))
-print(paste("- External SSD successfully saved and labeled to:", base_output_file))
-print("Pipeline Complete!")
+print("================================================================")
+print("BATCH PIPELINE COMPLETE! All datasets merged and filtered.")
+print("================================================================")
 toc()

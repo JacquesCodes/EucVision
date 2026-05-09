@@ -5,49 +5,56 @@
 # Email: Jacques.Stellies@gmail.com
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
 # ──────────────────────────────────────────────────────────────────────────────
-# Description: Automates the extraction, backup, and consolidation of temporal 
-#              crown metrics across all flight datasets. It seamlessly joins 
-#              UAV-derived data with ground-truth field measurements, dynamically 
-#              coalescing overlapping variables. The pipeline also standardizes 
-#              nomenclature, applies statistical outlier filtering to remove 
-#              anomalous height spikes, and exports a chronologically sorted 
-#              Master Dataset for downstream statistical analysis.
+# Description: Automates the extraction, consolidation, and spatial alignment of 
+#              temporal crown metrics across all UAV flight datasets. It seamlessly 
+#              joins drone-derived data with ground-truth field measurements and 
+#              dynamically pads the dataset using a static master baseline template. 
+#              This ensures all dead and unmeasured trees are explicitly tracked 
+#              across time with properly aligned NA values and mortality dates. 
+#              Finally, the pipeline applies statistical outlier filtering to remove 
+#              anomalous height spikes and exports a clean, chronologically sorted 
+#              Master Dataset for downstream longitudinal analysis.
 # ──────────────────────────────────────────────────────────────────────────────
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 1. Setup and Imports ####
 # ──────────────────────────────────────────────────────────────────────────────
-# Install missing packages if necessary
 if (!require("dplyr")) install.packages("dplyr")
 if (!require("readr")) install.packages("readr")
 if (!require("stringr")) install.packages("stringr")
 
-# Load required libraries for data manipulation and string parsing
 library(dplyr)
 library(readr)
 library(stringr)
 
-# Force R to use English for date parsing to prevent locale-specific errors
 Sys.setlocale("LC_TIME", "C")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 2. Configuration & Path Management ####
 # ──────────────────────────────────────────────────────────────────────────────
-# Define base source and backup directories
 src_base_dir <- "E:/Remote Sensing Media"
 dest_backup_dir <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/05. Crown Metrics"
 
-# Define dataset specific paths (Updated to "01. Master Dataset.csv")
 dest_master_csv <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data analysis/01. Master Dataset.csv"
 field_measurements_csv <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data analysis/02. Field Measurements.csv"
+
+# --- ADDED: Path to your Master Template to track the Dead Trees ---
+template_csv <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data analysis/00. Dataset template.csv"
+
+# Load the master template once into memory
+if (file.exists(template_csv)) {
+  master_template <- read_csv(template_csv, show_col_types = FALSE) %>%
+    mutate(Tree = round(as.numeric(Tree), 2))
+} else {
+  stop("CRITICAL ERROR: '00. Dataset template.csv' not found. Cannot pad dead trees.")
+}
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 3. Run Script & Extract UAV Data ####
 # ──────────────────────────────────────────────────────────────────────────────
 main_folders <- list.dirs(src_base_dir, recursive = FALSE)
 
-# --- EXCLUSION FILTER ---
-# Remove the specified TLS folder from the list of directories to process
+# Remove TLS folder
 folder_to_exclude <- "07. December 2025 (TLS)"
 main_folders <- main_folders[basename(main_folders) != folder_to_exclude]
 
@@ -58,38 +65,34 @@ cat("\n--- Starting Teams backup and data extraction ---\n")
 for (folder in main_folders) {
   folder_name <- basename(folder)
   
-  # Extract and format the date from the folder name
   date_match <- str_extract(folder_name, "\\d{2} [A-Za-z]+ \\d{4}")
   formatted_date <- NA
   if (!is.na(date_match)) {
     parsed_date <- as.Date(date_match, format="%d %B %Y")
-    # --- CHANGED: Now outputs format like 25-02-2025 ---
     formatted_date <- format(parsed_date, "%d-%m-%Y") 
   }
   
   crown_metrics_path <- file.path(folder, "09. Crown Metrics")
   
-  # Process folder if the Crown Metrics directory exists
   if (dir.exists(crown_metrics_path)) {
     files_to_copy <- list.files(crown_metrics_path, 
                                 pattern = "\\.(shp|shx|dbf|prj|csv)$", 
-                                full.names = TRUE, 
-                                ignore.case = TRUE)
+                                full.names = TRUE, ignore.case = TRUE)
     
     if (length(files_to_copy) > 0) {
       current_dest_dir <- file.path(dest_backup_dir, folder_name)
       if (!dir.exists(current_dest_dir)) dir.create(current_dest_dir, recursive = TRUE)
       
-      # Copy files to the backup directory
       file.copy(from = files_to_copy, to = current_dest_dir, overwrite = TRUE)
       
-      # Identify the CSV file for data extraction
       csv_file <- files_to_copy[grepl("\\.csv$", files_to_copy, ignore.case = TRUE)]
       
       if (length(csv_file) == 1) {
-        temp_df <- read_csv(csv_file, show_col_types = FALSE)
+        # Load drone data and ensure Tree column matches template precision
+        temp_df <- read_csv(csv_file, show_col_types = FALSE) %>%
+          mutate(Tree = round(as.numeric(Tree), 2))
         
-        # --- Clean Columns ---
+        # Clean Columns
         if ("Cmprtmn" %in% names(temp_df)) temp_df <- rename(temp_df, Compartment = Cmprtmn)
         
         if ("Area_m2" %in% names(temp_df) && !"Area" %in% names(temp_df)) {
@@ -100,15 +103,20 @@ for (folder in main_folders) {
           temp_df <- mutate(temp_df, Crown_Area = coalesce(Area_m2, Area))
         }
         
-        temp_df$Date <- formatted_date
-        
-        # Keep only essential columns
         cols_to_keep <- c("Compartment", "Line", "Plot", "Culture", "Spacing", 
-                          "Species", "Tree", "Date", "Crown_Area", "Tree_Height")
+                          "Species", "Tree", "Crown_Area", "Tree_Height")
         temp_df <- select(temp_df, any_of(cols_to_keep))
         
+        # --- INJECT DEAD TREES: Left join the master template with the drone data ---
+        # Alive trees get their drone metrics. Missing/Dead trees get NA.
+        temp_df <- master_template %>%
+          left_join(temp_df, by = c("Compartment", "Line", "Plot", "Culture", "Spacing", "Species", "Tree"))
+        
+        # Assign the current flight date to all rows (alive and dead)
+        temp_df$Date <- formatted_date
+        
         csv_list[[folder_name]] <- temp_df
-        cat(paste("SUCCESS: Processed ->", folder_name, "\n"))
+        cat(paste("SUCCESS: Processed and padded ->", folder_name, "\n"))
       }
     }
   }
@@ -122,14 +130,28 @@ if (length(csv_list) > 0) {
   master_dataset <- bind_rows(csv_list)
   
   if (file.exists(field_measurements_csv)) {
-    cat("Found '02. Field Measurements.csv'. Running FULL JOIN...\n")
-    other_data <- read_csv(field_measurements_csv, show_col_types = FALSE)
+    cat("Found '02. Field Measurements.csv'. Padding field dates and running FULL JOIN...\n")
+    other_data <- read_csv(field_measurements_csv, show_col_types = FALSE) %>%
+      mutate(Tree = round(as.numeric(Tree), 2))
     
-    # Round the Tree column to 2 decimal places to fix floating-point mismatches
-    master_dataset <- master_dataset %>% mutate(Tree = round(as.numeric(Tree), 2))
-    other_data <- other_data %>% mutate(Tree = round(as.numeric(Tree), 2))
+    # --- PAD FIELD DATES: Ensure field-only dates also include the dead trees ---
+    padded_other_list <- list()
+    for (f_date in unique(other_data$Date)) {
+      df_date <- other_data %>% filter(Date == f_date)
+      
+      # Remove Death_Date if it accidentally exists in field data to prevent .x/.y duplication
+      df_date <- select(df_date, -any_of("Death_Date"))
+      
+      # Pad the field date with the template
+      df_padded <- master_template %>%
+        left_join(df_date, by = c("Compartment", "Line", "Plot", "Culture", "Spacing", "Species", "Tree"))
+      df_padded$Date <- f_date
+      
+      padded_other_list[[f_date]] <- df_padded
+    }
+    other_data <- bind_rows(padded_other_list)
     
-    # Safely rename columns in the external dataset to prevent .x and .y duplicates
+    # Safely rename columns in the external dataset
     if ("Tree_Height" %in% names(other_data)) {
       other_data <- other_data %>% rename(Tree_Height_other = Tree_Height)
     }
@@ -137,10 +159,11 @@ if (length(csv_list) > 0) {
       other_data <- other_data %>% rename(Crown_Area_other = Crown_Area)
     }
     
+    # Include 'Death_Date' in the join to perfectly align the two padded datasets
     master_dataset <- master_dataset %>%
-      full_join(other_data, by = c("Compartment", "Line", "Plot", "Culture", "Spacing", "Species", "Tree", "Date"))
+      full_join(other_data, by = c("Compartment", "Line", "Plot", "Culture", "Spacing", "Species", "Tree", "Date", "Death_Date"))
     
-    # Neatly merge the external heights into the main Tree_Height column
+    # Neatly merge the external heights
     if ("Tree_Height_other" %in% names(master_dataset)) {
       master_dataset <- suppressWarnings(
         master_dataset %>%
@@ -153,7 +176,7 @@ if (length(csv_list) > 0) {
       )
     }
     
-    # Neatly merge the external Crown_Area if it exists
+    # Neatly merge the external Crown_Area
     if ("Crown_Area_other" %in% names(master_dataset)) {
       master_dataset <- suppressWarnings(
         master_dataset %>%
@@ -182,7 +205,7 @@ if (length(csv_list) > 0) {
       )
   )
   
-  # Dynamic Outlier Filtering: Remove anomalous spikes based on flight distributions
+  # Dynamic Outlier Filtering (Dead trees with NA safely bypass this)
   master_dataset <- master_dataset %>%
     group_by(Date) %>%
     mutate(

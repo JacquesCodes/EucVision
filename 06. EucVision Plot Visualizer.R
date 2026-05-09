@@ -30,6 +30,8 @@ library(future)
 library(terra)
 library(rgl)
 
+# (Reverted 3D plotting back to default external rgl window)
+
 # ──────────────────────────────────────────────────────────────────────────────
 # 2. Configuration & Path Management ####
 # ──────────────────────────────────────────────────────────────────────────────
@@ -38,7 +40,7 @@ library(rgl)
 date_folder <- "20. 23 March 2026"
 
 # Define the specific plot number to visualize
-Number <- "17"
+Number <- "37"
 
 # Extract the date part and create a safe filename format
 # (e.g., "17. 02 March 2026" -> "02_March_2026")
@@ -113,14 +115,12 @@ path_trees <- paste0(myPath, "08. Crown Polygons/Crown_Polygons_", file_date_saf
 if (file.exists(path_trees)) {
   trees <- st_read(path_trees, quiet = TRUE)
   
-  # --- APPLIED SUCCESSFUL FIX HERE ---
   # The CRS Fix: Assign raster metadata to the shapefile
   if (!is.null(las_chm)) {
     st_crs(trees) <- st_crs(las_chm)
   }
   
   # Filter for just the target plot we are currently visualizing
-  # Using both numeric and character checks to be perfectly safe based on the .dbf reading
   PlotTrees <- trees[trees$Plot == Number | trees$Plot == as.numeric(Number),]
   message("Loaded and filtered Crown Polygons for Plot ", Number)
   
@@ -155,18 +155,12 @@ if (!is.null(las_normalised)) {
 
 # 4.4 Plot 2D Canopy Height Model (CHM)
 if (!is.null(las_chm)) {
-  # --- APPLIED SUCCESSFUL FIX HERE ---
   if (!is.null(PlotTrees) && nrow(PlotTrees) > 0) {
-    # Crop the raster to the plot boundary so we can actually see the trees
-    zoomed_chm <- crop(las_chm, ext(PlotTrees))
     
-    # Open a fresh plotting window so it doesn't overwrite your 3D plots
-    dev.new()
+    # Plot Base Image using the full extent of the CHM
+    plot(las_chm, col = height.colors(50), main = paste("Full CHM with Plot", Number, "Crown Overlay"))
     
-    # Plot Base Image
-    plot(zoomed_chm, col = height.colors(50), main = paste("Plot", Number, "CHM & Crown Overlay"))
-    
-    # Add Polygons
+    # Add Polygons (They will render accurately over the CHM extent)
     plot(st_geometry(PlotTrees), add = TRUE, border = "red", lwd = 2)
   } else {
     # Fallback if no polygons exist for this plot
@@ -178,57 +172,47 @@ if (!is.null(las_chm)) {
 # 5. Individual Tree Detection (ITD) & Segmentation (ITS) ####
 # ──────────────────────────────────────────────────────────────────────────────
 
-# MinimumTreeHeight <- 0.5
-# 
-# # Initialize the Local Maximum Filter (LMF) algorithm for treetops
-# # 'ws' defines the circular search window diameter in meters
-# lmf_algorithm <- lmf(ws = 3, hmin = MinimumTreeHeight, shape = "circular")
-# 
-# # Execute ITD and Segmentation if the required spatial data is available
-# if (!is.null(las_chm) && !is.null(las_normalised)) {
-#   
-#   # --- 1. Locate Individual Treetops (ITD) ---
-#   ttops <- locate_trees(las = las_chm, algorithm = lmf_algorithm)
-#   
-#   # --- 2. Segment the 3D Point Cloud (ITS) ---
-#   # Initialize the Dalponte 2016 algorithm using the CHM and detected treetops
-#   algo_dalponte <- dalponte2016(chm = las_chm, treetops = ttops)
-#   
-#   # Segment the points. This automatically adds a 'treeID' column to the LAS object
-#   las_segmented <- segment_trees(las = las_normalised, algorithm = algo_dalponte)
-#   
-#   # Filter out points that were not assigned to a tree (e.g., ground/noise)
-#   las_trees_only <- filter_poi(las_segmented, !is.na(treeID))
-#   
-#   # --- 3. Optional: Generate Dynamic Crown Polygons from Points ---
-#   # Since your second script uses crown shapes, you can extract them right here!
-#   delineated_crowns <- crown_metrics(las_trees_only, func = .stdtreemetrics, geom = "convex")
-#   
-#   # --- 4. Visualizations ---
-#   
-#   # Visualization A: 2D CHM with Treetops and Delineated Crowns
-#   plot(las_chm, col = height.colors(50), main = "CHM with Treetops & Crown Boundaries")
-#   plot(sf::st_geometry(ttops), add = TRUE, pch = 3, col = "black")
-#   if (!is.null(delineated_crowns)) {
-#     plot(sf::st_geometry(delineated_crowns), add = TRUE, border = "white", lwd = 2)
-#   }
-#   
-#   # Visualization B: 3D Segmented Point Cloud
-#   # Points are colored randomly by their unique treeID
-#   plot(las_trees_only, 
-#        color = "treeID", 
-#        colorPalette = pastel.colors(200),
-#        bg = "white", 
-#        size = 3)
-#   
-# } else {
-#   message("Cannot perform ITD or Segmentation: Both CHM and Normalised point clouds are required.")
-# }
+MinimumTreeHeight <- 0.5
+
+# Initialize the Local Maximum Filter (LMF) algorithm for treetops
+lmf_algorithm <- lmf(ws = 3, hmin = MinimumTreeHeight, shape = "circular")
+
+# Execute ITD and Segmentation if the required spatial data is available
+if (!is.null(las_chm) && !is.null(las_normalised)) {
+  
+  # --- 1. Locate Individual Treetops (ITD) ---
+  ttops <- locate_trees(las = las_chm, algorithm = lmf_algorithm)
+  
+  # --- 2. Segment the 3D Point Cloud (ITS) ---
+  algo_dalponte <- dalponte2016(chm = las_chm, treetops = ttops)
+  las_segmented <- segment_trees(las = las_normalised, algorithm = algo_dalponte)
+  las_trees_only <- filter_poi(las_segmented, !is.na(treeID))
+  
+  # --- 3. Optional: Generate Dynamic Crown Polygons from Points ---
+  delineated_crowns <- crown_metrics(las_trees_only, func = .stdtreemetrics, geom = "convex")
+  
+  # --- 4. Visualizations ---
+  # Visualization A: 2D CHM with Treetops and Delineated Crowns
+  plot(las_chm, col = height.colors(50), main = "CHM with Treetops & Crown Boundaries")
+  plot(sf::st_geometry(ttops), add = TRUE, pch = 3, col = "black")
+  if (!is.null(delineated_crowns)) {
+    plot(sf::st_geometry(delineated_crowns), add = TRUE, border = "white", lwd = 2)
+  }
+  
+  # Visualization B: 3D Segmented Point Cloud
+  plot(las_trees_only,
+       color = "treeID",
+       colorPalette = pastel.colors(200),
+       bg = "white",
+       size = 3)
+  
+} else {
+  message("Cannot perform ITD or Segmentation: Both CHM and Normalised point clouds are required.")
+}
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 6. Optional: 3D Animation Export ####
 # ──────────────────────────────────────────────────────────────────────────────
-# Note: rgl animations will not render correctly if the 3D plot window is fullscreened.
 
 # # --- Define spin motion ---
 # spin <- spin3d(axis = c(0, 0, 1), rpm = 6)

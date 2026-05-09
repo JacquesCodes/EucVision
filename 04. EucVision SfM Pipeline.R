@@ -43,10 +43,11 @@ baseline_dtm <- rast(baseline_dtm_path)
 # --- RUN CONTROLS ---
 # Set to a specific folder name to run only that dataset (e.g., "01. 25 February 2025") 
 # Set to NULL to run the full batch process.
-target_date_override <- NULL
+# target_date_override <- NULL
+target_date_override <- "20. 23 March 2026"
 
 # Disk Space Management: TRUE retains intermediate point clouds, FALSE deletes them.
-keep_intermediate_dirs <- FALSE
+keep_intermediate_dirs <- TRUE
 
 # --- EXCLUDE LIST ---
 # Folders to ignore during the batch processing loop
