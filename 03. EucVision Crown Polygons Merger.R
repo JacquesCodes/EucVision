@@ -137,9 +137,9 @@ for (folder_path in dataset_folders) {
   }) %>% bind_rows() 
   
   # ────────────────────────────────────────────────────────────────────────────
-  # 6. Temporal Mortality Filtering ####
+  # 6. Temporal Mortality Filtering & Failsafes ####
   # ────────────────────────────────────────────────────────────────────────────
-  # Refresh the CSV baseline (the 3144 dataset) for this iteration
+  # Refresh the CSV baseline for this iteration
   csv_data <- csv_shapefile_baseline
   
   # A tree is alive if it has no death date OR if its death date is AFTER the current flight
@@ -153,41 +153,74 @@ for (folder_path in dataset_folders) {
   print(paste("   Trees flagged as Dead since baseline:", legacy_sf_count - alive_count))
   
   # ---------------------------------------------------------
-  # FAILSAFE 3: Backward compatibility check
+  # FAILSAFE 1: Global Count Check
   # ---------------------------------------------------------
   raw_sf_count <- nrow(combined_sf)
+  is_legacy <- FALSE
   
   if (raw_sf_count == legacy_sf_count) {
-    print("   -> Found legacy shapefiles (3144 features). Filtering dead geometries...")
-    combined_sf <- bind_cols(csv_data, combined_sf) %>% st_as_sf()
-    combined_sf <- combined_sf %>% filter(Is_Alive)
+    print("   -> FAILSAFE 1 PASSED: Found legacy shapefiles (3144 features).")
+    is_legacy <- TRUE
+    csv_for_binding <- csv_data
     
   } else if (raw_sf_count == alive_count) {
-    print("   -> Found updated shapefiles. Features match alive trees perfectly.")
-    combined_sf <- bind_cols(csv_alive, combined_sf) %>% st_as_sf()
+    print("   -> FAILSAFE 1 PASSED: Found updated shapefiles. Features match alive trees.")
+    is_legacy <- FALSE
+    csv_for_binding <- csv_alive
     
   } else {
-    stop(paste("\nCRITICAL ERROR - FAILSAFE 3 TRIGGERED FOR", date_folder, 
+    stop(paste("\nCRITICAL ERROR - FAILSAFE 1 TRIGGERED FOR", date_folder, 
                "\nShapefile features (", raw_sf_count, ") do NOT match the alive trees (", alive_count, ").",
                "\nBecause it does not match alive trees, it MUST be exactly the legacy baseline (", legacy_sf_count, ")."))
   }
   
   # ---------------------------------------------------------
-  # FAILSAFE 1 & 2: Final Validation
+  # FAILSAFE 2: Pre-Bind Plot Consistency Check
   # ---------------------------------------------------------
-  if (nrow(combined_sf) != alive_count) {
-    stop(paste("CRITICAL ERROR - FAILSAFE 1 TRIGGERED in", date_folder, "- Final count mismatch!"))
-  }
+  # Before gluing the datasets together, verify the per-plot counts match perfectly!
+  csv_plot_counts <- csv_for_binding %>% group_by(Plot) %>% summarise(Expected = n(), .groups = "drop")
   
-  csv_plot_counts <- csv_alive %>% group_by(Plot) %>% summarise(Expected = n(), .groups = "drop")
-  sf_plot_counts <- combined_sf %>% st_drop_geometry() %>% group_by(Plot) %>% summarise(Actual = n(), .groups = "drop")
-  plot_mismatch <- full_join(csv_plot_counts, sf_plot_counts, by="Plot") %>% filter(is.na(Expected) | is.na(Actual) | Expected != Actual)
+  # Extract the Plot Number dynamically from the 'Plot_shp' attribute
+  sf_plot_counts <- combined_sf %>% 
+    st_drop_geometry() %>% 
+    mutate(Plot = as.numeric(gsub("\\D", "", Plot_shp))) %>% 
+    group_by(Plot) %>% 
+    summarise(Actual = n(), .groups = "drop")
+  
+  plot_mismatch <- full_join(csv_plot_counts, sf_plot_counts, by="Plot") %>% 
+    filter(is.na(Expected) | is.na(Actual) | Expected != Actual)
   
   if (nrow(plot_mismatch) > 0) {
+    print("\n--- MISMATCHED PLOTS DETECTED ---")
     print(plot_mismatch)
-    stop(paste("CRITICAL ERROR - FAILSAFE 2 TRIGGERED in", date_folder, "- Plot alignment mismatch!"))
+    stop(paste("CRITICAL ERROR - FAILSAFE 2 TRIGGERED in", date_folder, 
+               "- The shapefile features per plot do not perfectly match the CSV rows per plot! Halting before bad merge."))
+  } else {
+    print("   -> FAILSAFE 2 PASSED: CSV rows perfectly align with spatial plots.")
   }
   
+  # ---------------------------------------------------------
+  # Data Merging (Safe to proceed)
+  # ---------------------------------------------------------
+  if (is_legacy) {
+    print("   -> Binding data and filtering out dead geometries...")
+    combined_sf <- bind_cols(csv_for_binding, combined_sf) %>% st_as_sf()
+    combined_sf <- combined_sf %>% filter(Is_Alive)
+  } else {
+    print("   -> Binding updated data...")
+    combined_sf <- bind_cols(csv_for_binding, combined_sf) %>% st_as_sf()
+  }
+  
+  # ---------------------------------------------------------
+  # FAILSAFE 3: Final Spatial Output Check
+  # ---------------------------------------------------------
+  if (nrow(combined_sf) != alive_count) {
+    stop(paste("CRITICAL ERROR - FAILSAFE 3 TRIGGERED in", date_folder, "- Final count mismatch after processing!"))
+  } else {
+    print("   -> FAILSAFE 3 PASSED: Final geometry count matches alive trees.")
+  }
+  
+  # Clean up temporary structural columns
   combined_sf <- combined_sf %>% select(-Parsed_Death_Date, -Is_Alive, -Plot_shp)
   
   # ────────────────────────────────────────────────────────────────────────────
@@ -202,14 +235,14 @@ for (folder_path in dataset_folders) {
   writeLines(pure_epsg_2048_wkt, prj_teams)
   writeLines(pure_epsg_2048_wkt, prj_ssd)
   
-  print("-> Failsafes passed. Geometries filtered and exported.")
+  print("-> All Failsafes passed. Geometries filtered and exported.")
   
   # Clean up memory before the next loop
-  rm(combined_sf, csv_alive, csv_plot_counts, sf_plot_counts, plot_mismatch)
+  rm(combined_sf, csv_for_binding, csv_plot_counts, sf_plot_counts, plot_mismatch)
   gc()
 }
 
 print("================================================================")
-print("BATCH PIPELINE COMPLETE! All datasets merged and filtered.")
+print("BATCH PIPELINE COMPLETE! All datasets safely merged and filtered.")
 print("================================================================")
 toc()

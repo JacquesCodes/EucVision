@@ -32,6 +32,9 @@ library(exactextractr)
 library(stringr)
 library(readr)
 
+# The strict, exact OGC Well-Known Text (WKT) for EPSG:2048 to force the South/West axis fix
+pure_epsg_2048_wkt <- 'PROJCS["Hartebeesthoek94 / Lo19",GEOGCS["Hartebeesthoek94",DATUM["Hartebeesthoek94",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6148"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4148"]],PROJECTION["Transverse_Mercator"],PARAMETER["latitude_of_origin",0],PARAMETER["central_meridian",19],PARAMETER["scale_factor",1],PARAMETER["false_easting",0],PARAMETER["false_northing",0],UNIT["metre",1,AUTHORITY["EPSG","9001"]],AXIS["Southing",SOUTH],AXIS["Westing",WEST],AUTHORITY["EPSG","2048"]]'
+
 # Force R to use English for date parsing to prevent locale-specific errors
 Sys.setlocale("LC_TIME", "C")
 
@@ -72,7 +75,13 @@ dest_backup_dir <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skrips
 # ──────────────────────────────────────────────────────────────────────────────
 # 3. Static Spatial Data Loading ####
 # ──────────────────────────────────────────────────────────────────────────────
+
 plots_buffered_unsorted <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/1. LAScatalog Plot Boundaries/LAScatalog Plot Boundaries.shp")
+
+# --- APPLIED CRS FIX 1: THE CLIPPING BOUNDARIES ---
+# Force the clipping polygons to perfectly inherit the master DTM's spatial grid
+st_crs(plots_buffered_unsorted) <- st_crs(baseline_dtm)
+
 plots <- plots_buffered_unsorted[order(plots_buffered_unsorted$id), ]
 
 # NEW: Load the Impact Plot & Compartment Boundaries to mask Top and Bottom DSMs
@@ -128,11 +137,12 @@ for (folder_path in dataset_folders) {
     next
   }
   
-  trees <- st_read(crown_shp_path, quiet = TRUE)
-  if (is.na(st_crs(trees)$epsg) || st_crs(trees)$epsg != 2048) {
-    trees <- st_transform(trees, 2048)
-  }
-  trees <- trees %>% select(-any_of(c("group_ulid", "N_GM", "id", "N_FG", "N_BG", "BBox")))
+  trees <- st_read(crown_shp_path, quiet = TRUE) %>% 
+    mutate(Tree = round(Tree, 2)) %>%  # Force 2 decimal precision
+    select(-any_of(c("group_ulid", "N_GM", "id", "N_FG", "N_BG", "BBox")))
+  
+  # Force the tree polygons to inherit the master grid immediately
+  st_crs(trees) <- st_crs(baseline_dtm)
   
   # ────────────────────────────────────────────────────────────────────────────
   # 4.1. DSM Selection, Masking & Mosaicing
@@ -222,15 +232,22 @@ for (folder_path in dataset_folders) {
   tic("Metric extraction complete")
   print("Extracting metrics and exporting to '10. DSM - DTM = CHM'...")
   
-  trees <- st_transform(trees, st_crs(raw_chm))
-  
   # Extract metrics
   trees$Tree_Height <- exact_extract(raw_chm, trees, 'max')
   
   # BYPASSED DYNAMIC CLAMP - Writing raw CHM directly
   terra::writeRaster(raw_chm, filename = single_chm_path, overwrite = TRUE)
-  st_write(trees, file.path(out_dir, paste0("Crown_Metrics_RasterMath_", file_date_safe, ".shp")), delete_dsn = TRUE, quiet = TRUE)
-  write.csv(st_drop_geometry(trees), file.path(out_dir, paste0("Crown_Metrics_RasterMath_", file_date_safe, ".csv")), row.names = FALSE)
+  
+  out_shp_path <- file.path(out_dir, paste0("Crown_Metrics_RasterMath_", file_date_safe, ".shp"))
+  out_csv_path <- file.path(out_dir, paste0("Crown_Metrics_RasterMath_", file_date_safe, ".csv"))
+  
+  st_write(trees, out_shp_path, delete_dsn = TRUE, quiet = TRUE)
+  
+  # --- INJECT PURE EPSG:2048 WKT INTO .PRJ FILE ---
+  prj_path <- sub("\\.shp$", ".prj", out_shp_path, ignore.case = TRUE)
+  writeLines(pure_epsg_2048_wkt, prj_path)
+  
+  write.csv(st_drop_geometry(trees), out_csv_path, row.names = FALSE)
   toc()
   
   # --- GARBAGE COLLECTION ---
