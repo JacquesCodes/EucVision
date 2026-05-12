@@ -37,7 +37,7 @@ csv_path <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc
 
 # --- RUN CONTROLS ---
 # Set to a specific folder name to run only that dataset, or set to NULL for full batch.
-target_date_override <- NULL
+target_date_override <- "24. 23 April 2026"
 
 # --- EXCLUDE LIST ---
 exclude_list <- c("01. 25 February 2025",
@@ -153,7 +153,7 @@ for (folder_path in dataset_folders) {
   print(paste("   Trees flagged as Dead since baseline:", legacy_sf_count - alive_count))
   
   # ---------------------------------------------------------
-  # FAILSAFE 1: Global Count Check
+  # FAILSAFE 1: Global Count Check & Diagnostic Output
   # ---------------------------------------------------------
   raw_sf_count <- nrow(combined_sf)
   is_legacy <- FALSE
@@ -169,9 +169,34 @@ for (folder_path in dataset_folders) {
     csv_for_binding <- csv_alive
     
   } else {
+    # --- NEW DIAGNOSTIC CODE ---
+    print("\n--- DIAGNOSTIC: FINDING MISMATCHED PLOTS FOR FAILSAFE 1 ---")
+    
+    # Calculate expected counts based on alive trees for this date
+    diag_csv_counts <- csv_alive %>% 
+      group_by(Plot) %>% 
+      summarise(Expected = n(), .groups = "drop")
+    
+    # Calculate actual counts from the shapefiles currently loaded
+    diag_sf_counts <- combined_sf %>% 
+      st_drop_geometry() %>% 
+      mutate(Plot = as.numeric(gsub("\\D", "", Plot_shp))) %>% 
+      group_by(Plot) %>% 
+      summarise(Actual = n(), .groups = "drop")
+    
+    # Join and find where the numbers don't match
+    diag_mismatch <- full_join(diag_csv_counts, diag_sf_counts, by="Plot") %>% 
+      filter(is.na(Expected) | is.na(Actual) | Expected != Actual)
+    
+    print("Here are the plots with missing or extra features:")
+    print(diag_mismatch, n = Inf) # n = Inf ensures all mismatched rows print to console
+    print("-----------------------------------------------------------")
+    # ---------------------------
+    
     stop(paste("\nCRITICAL ERROR - FAILSAFE 1 TRIGGERED FOR", date_folder, 
                "\nShapefile features (", raw_sf_count, ") do NOT match the alive trees (", alive_count, ").",
-               "\nBecause it does not match alive trees, it MUST be exactly the legacy baseline (", legacy_sf_count, ")."))
+               "\nBecause it does not match alive trees, it MUST be exactly the legacy baseline (", legacy_sf_count, ").",
+               "\n-> Check the console output directly above this error to see which plots are mismatched!"))
   }
   
   # ---------------------------------------------------------
