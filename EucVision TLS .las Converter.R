@@ -33,8 +33,10 @@ crs_april <- st_crs(header_april)
 
 # 3. Setup Naming Variables (Mimicking your pipeline logic)
 date_folder <- "07. December 2025 (TLS)"
-file_date <- sub("^\\d+\\.\\s*", "", date_folder)
-file_date_safe <- gsub(" ", "_", file_date) # Results in "December_2025_(TLS)"
+
+# Extract the date part and create a safe filename format
+# (e.g., "17. 02 March 2026" -> "02_March_2026")
+file_date_safe <- gsub(" ", "_", sub("^\\d+\\.\\s*", "", date_folder))
 
 # 4. Get the list of all 21 .laz files
 laz_files <- list.files(input_dir, pattern = "\\.laz$", full.names = TRUE)

@@ -78,13 +78,13 @@ dest_backup_dir <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skrips
 
 plots_buffered_unsorted <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/1. LAScatalog Plot Boundaries/LAScatalog Plot Boundaries.shp")
 
-# --- APPLIED CRS FIX 1: THE CLIPPING BOUNDARIES ---
+# THE CLIPPING BOUNDARIES
 # Force the clipping polygons to perfectly inherit the master DTM's spatial grid
 st_crs(plots_buffered_unsorted) <- st_crs(baseline_dtm)
 
 plots <- plots_buffered_unsorted[order(plots_buffered_unsorted$id), ]
 
-# NEW: Load the Impact Plot & Compartment Boundaries to mask Top and Bottom DSMs
+# Load the Impact Plot & Compartment Boundaries to mask Top and Bottom DSMs
 impact_bounds <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/4. IMPACT Plot & Compartment Boundaries/IMPACT Plot & Compartment Boundaries EPSG 2048.shp", quiet = TRUE)
 if (is.na(st_crs(impact_bounds)$epsg) || st_crs(impact_bounds)$epsg != 2048) {
   impact_bounds <- st_transform(impact_bounds, 2048)
@@ -94,6 +94,8 @@ if (is.na(st_crs(impact_bounds)$epsg) || st_crs(impact_bounds)$epsg != 2048) {
 top_bound <- terra::vect(impact_bounds[grepl("TOP", impact_bounds$Name, ignore.case = TRUE), ])
 bot_bound <- terra::vect(impact_bounds[grepl("BOTTOM", impact_bounds$Name, ignore.case = TRUE), ])
 
+# Enable parallel processing for lidR operations to run across 6 CPU logical processors.
+# Note: Users should adjust 'workers' based on their available CPU logical processors and RAM.
 plan(multisession, workers = 6) 
 
 print("================================================================")
@@ -105,8 +107,10 @@ print("================================================================")
 for (folder_path in dataset_folders) {
   
   date_folder <- basename(folder_path)
-  file_date <- sub("^\\d+\\.\\s*", "", date_folder)
-  file_date_safe <- gsub(" ", "_", file_date)
+  
+  # Extract the date part and create a safe filename format
+  # (e.g., "17. 02 March 2026" -> "02_March_2026")
+  file_date_safe <- gsub(" ", "_", sub("^\\d+\\.\\s*", "", date_folder))
   
   print(paste("----------------------------------------------------------------"))
   print(paste("PROCESSING DATASET:", date_folder))

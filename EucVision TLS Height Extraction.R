@@ -1,6 +1,19 @@
-# ==============================================================================
-# DYNAMIC TLS HEIGHT EXTRACTION SCRIPT (FINAL OPTIMIZED)
-# ==============================================================================
+# ──────────────────────────────────────────────────────────────────────────────
+# EUCVISION: DYNAMIC TLS HEIGHT EXTRACTION & FILTERING PIPELINE ####
+# ──────────────────────────────────────────────────────────────────────────────
+# Author: Jacques Vermeulen
+# Email: Jacques.Stellies@gmail.com
+# Project: EucXylo (https://eucxylo.sun.ac.za/)
+# ──────────────────────────────────────────────────────────────────────────────
+# Description: Automates the extraction of maximum tree heights from plot-level 
+#              Canopy Height Models (CHMs) using dynamically calculated, per-tree 
+#              height thresholds. It cross-references historical baseline data 
+#              to establish expected tree heights, applies a strict physiological 
+#              growth buffer constraint to eliminate canopy noise or anomalies, 
+#              and extracts the true maximum pixel value within each mapped 
+#              crown polygon. Output metrics are rigorously formatted and 
+#              exported as both spatial (Shapefile) and tabular (CSV) datasets.
+# ──────────────────────────────────────────────────────────────────────────────
 
 # 1. Setup and Imports
 library(sf)              
@@ -10,7 +23,12 @@ library(exactextractr)
 
 # 2. Configuration & Paths
 dataset_dir <- "E:/Remote Sensing Media/07. December 2025 (TLS)"
-file_date_safe <- "December_2025_(TLS)"
+
+date_folder <- basename(dataset_dir)
+
+# Extract the date part and create a safe filename format
+# (e.g., "17. 02 March 2026" -> "02_March_2026")
+file_date_safe <- gsub(" ", "_", sub("^\\d+\\.\\s*", "", date_folder))
 
 chm_dir <- file.path(dataset_dir, "07. Canopy Height Models")
 polygons_dir <- file.path(dataset_dir, "08. Crown Polygons")

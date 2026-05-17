@@ -37,7 +37,7 @@ csv_path <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc
 
 # --- RUN CONTROLS ---
 # Set to a specific folder name to run only that dataset, or set to NULL for full batch.
-target_date_override <- "24. 23 April 2026"
+target_date_override <- "14. 06 February 2026"
 
 # --- EXCLUDE LIST ---
 exclude_list <- c("01. 25 February 2025",
@@ -58,7 +58,7 @@ if (!is.null(target_date_override)) {
 master_csv_data <- read.csv(csv_path) %>% mutate(Tree = round(as.numeric(Tree), 2))
 master_csv_data$Parsed_Death_Date <- as.Date(master_csv_data$Death_Date, format="%d-%m-%Y")
 
-# --- CRITICAL FIX: Lock the baseline to the 3144 shapefile features ---
+# Lock the baseline to the 3144 shapefile features
 shapefile_baseline_date <- as.Date("2025-09-01")
 csv_shapefile_baseline <- master_csv_data %>%
   filter(is.na(Parsed_Death_Date) | Parsed_Death_Date > shapefile_baseline_date)
@@ -73,14 +73,20 @@ print(paste("Global Spatial Baseline Set To:", legacy_sf_count, "trees."))
 for (folder_path in dataset_folders) {
   
   date_folder <- basename(folder_path)
-  file_date <- sub("^\\d+\\.\\s*", "", date_folder)
-  file_date_safe <- gsub(" ", "_", file_date)
+  
+  # 1. Extract the raw text date (e.g., "06 February 2026")
+  raw_date_string <- sub("^\\d+\\.\\s*", "", date_folder)
+  
+  # 2. Create the safe filename version with underscores
+  file_date_safe <- gsub(" ", "_", raw_date_string)
   
   print("================================================================")
   print(paste("PROCESSING DATASET:", date_folder))
   print("================================================================")
   
-  current_flight_date <- as.Date(file_date, format="%d %B %Y")
+  # 3. Parse the raw text string into an actual R Date object
+  current_flight_date <- as.Date(raw_date_string, format="%d %B %Y")
+  
   if(is.na(current_flight_date)) {
     print(paste("-> WARNING: Date parsing failed. Skipping", date_folder))
     next
@@ -149,7 +155,7 @@ for (folder_path in dataset_folders) {
   alive_count <- nrow(csv_alive)
   
   print(paste("   Legacy Shapefile Baseline:", legacy_sf_count))
-  print(paste("   Alive on", file_date, ":", alive_count))
+  print(paste("   Alive on", raw_date_string, ":", alive_count))
   print(paste("   Trees flagged as Dead since baseline:", legacy_sf_count - alive_count))
   
   # ---------------------------------------------------------

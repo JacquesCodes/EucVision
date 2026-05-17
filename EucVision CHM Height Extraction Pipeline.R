@@ -31,7 +31,7 @@ base_dir <- "E:/Remote Sensing Media"
 # --- RUN CONTROLS ---
 # Set to a specific folder name to run only that dataset (e.g., "01. 25 February 2025") 
 # Set to NULL to run the full batch process.
-target_date_override <- NULL
+target_date_override <- "14. 06 February 2026"
 
 # Folders to ignore during the batch processing loop
 exclude_list <- c("000. Projects",
@@ -62,8 +62,10 @@ for (folder_path in dataset_folders) {
   
   # Dynamically extract and format the date from the folder name
   date_folder <- basename(folder_path)
-  file_date <- sub("^\\d+\\.\\s*", "", date_folder)
-  file_date_safe <- gsub(" ", "_", file_date)
+  
+  # Extract the date part and create a safe filename format
+  # (e.g., "17. 02 March 2026" -> "02_March_2026")
+  file_date_safe <- gsub(" ", "_", sub("^\\d+\\.\\s*", "", date_folder))
   
   print(paste("================================================================"))
   print(paste("EXTRACTING METRICS FOR:", date_folder))

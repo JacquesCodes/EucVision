@@ -79,15 +79,15 @@ print("Loading static spatial data and initializing parallel processing...")
 # st_read loads the vector data. quiet = TRUE suppresses messy console output.
 plots_buffered_unsorted <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/1. LAScatalog Plot Boundaries/LAScatalog Plot Boundaries.shp", quiet = TRUE)
 
-# --- APPLIED CRS FIX 1: THE CLIPPING BOUNDARIES ---
-# Force the clipping polygons to perfectly inherit the master DTM's spatial grid
+# Force the clipping polygons to perfectly inherit the master DTM's spatial grid (CRS)
 st_crs(plots_buffered_unsorted) <- st_crs(baseline_dtm)
 
 # Enforce numeric sorting by the 'id' column to guarantee consistent processing order
 plots <- plots_buffered_unsorted[order(plots_buffered_unsorted$id), ]
 
-# Spin up parallel workers for lidR catalog processing
-plan(multisession, workers = 6) 
+# Enable parallel processing for lidR operations to run across 6 CPU logical processors.
+# Note: Users should adjust 'workers' based on their available CPU logical processors and RAM.
+plan(multisession, workers = 6)
 
 print("Starting processing pipeline...")
 
@@ -101,8 +101,10 @@ for (folder_path in dataset_folders) {
   # ────────────────────────────────────────────────────────────────────────────
   # Dynamically extract and format the date from the folder name
   date_folder <- basename(folder_path)
-  file_date <- sub("^\\d+\\.\\s*", "", date_folder)
-  file_date_safe <- gsub(" ", "_", file_date)
+  
+  # Extract the date part and create a safe filename format
+  # (e.g., "17. 02 March 2026" -> "02_March_2026")
+  file_date_safe <- gsub(" ", "_", sub("^\\d+\\.\\s*", "", date_folder))
   
   print(paste("================================================================"))
   print(paste("PROCESSING DATASET:", date_folder))

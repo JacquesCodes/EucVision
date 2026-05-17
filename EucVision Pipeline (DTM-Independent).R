@@ -41,8 +41,7 @@ date_folder <- "07. December 2025 (TLS)"
 
 # Extract the date part and create a safe filename format
 # (e.g., "17. 02 March 2026" -> "02_March_2026")
-file_date <- sub("^\\d+\\.\\s*", "", date_folder)
-file_date_safe <- gsub(" ", "_", file_date)
+file_date_safe <- gsub(" ", "_", sub("^\\d+\\.\\s*", "", date_folder))
 
 # Define all processing directories dynamically based on the date
 las_folder     <- paste0("E:/Remote Sensing Media/", date_folder, "/03. Point Clouds/")
@@ -65,6 +64,8 @@ for (dir in c(clipped_dir, classified_dir, normalised_dir, chm_dir, metrics_dir)
 plots_buffered_unsorted <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/1. LAScatalog Plot Boundaries/LAScatalog Plot Boundaries.shp")
 plots <- plots_buffered_unsorted[order(plots_buffered_unsorted$id), ]
 
+# Enable parallel processing for lidR operations to run across 2 CPU logical processors.
+# Note: Users should adjust 'workers' based on their available CPU logical processors and RAM.
 plan(multisession, workers = 2)
 
 # --- BATCH PROCESSING & CATALOG SETUP ---

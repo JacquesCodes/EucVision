@@ -27,12 +27,14 @@ library(terra)
 # 2. Configuration & Path Management ####
 # ──────────────────────────────────────────────────────────────────────────────
 # Define your "Golden Baseline" date where ground is most visible
-date_folder <- "01. 25 February 2025"
+date_folder <- "03. 30 October 2025"
+
+# Extract the date part and create a safe filename format
+# (e.g., "17. 02 March 2026" -> "02_March_2026")
 file_date_safe <- gsub(" ", "_", sub("^\\d+\\.\\s*", "", date_folder))
 
 las_folder <- paste0("E:/Remote Sensing Media/", date_folder, "/03. Point Clouds/")
 
-# NEW: Directory for the cropped point clouds
 cropped_dir <- paste0("E:/Remote Sensing Media/", date_folder, "/03b. Point Clouds Cropped/")
 denoised_dir <- paste0("E:/Remote Sensing Media/", date_folder, "/04b. Point Clouds Denoised/")
 classified_dir <- paste0("E:/Remote Sensing Media/", date_folder, "/05. Point Clouds Ground Classified/")
@@ -52,6 +54,9 @@ boundary <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skrip
 # ──────────────────────────────────────────────────────────────────────────────
 # 3.5. Point Cloud Cropping (Fixing Sparse Edges) ####
 # ──────────────────────────────────────────────────────────────────────────────
+
+# Enable parallel processing for lidR operations to run across 6 CPU logical processors.
+# Note: Users should adjust 'workers' based on their available CPU logical processors and RAM.
 plan(multisession, workers = 6)
 
 # Load the new OAL boundary to clip the raw data
