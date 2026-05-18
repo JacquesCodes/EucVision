@@ -6,7 +6,7 @@
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
 # ──────────────────────────────────────────────────────────────────────────────
 # Description: Processes raw baseline point clouds across the entire site using 
-#              optimal geometric chunks for 32GB of RAM, classifies ground, 
+#              optimal geometric chunks for 32GB of RAM & 6 Workers, classifies ground, 
 #              generates a Master DTM VRT, and crops the final raster to the 
 #              study boundary.
 # ──────────────────────────────────────────────────────────────────────────────
@@ -31,7 +31,8 @@ date_folder <- "03. 30 October 2025"
 
 # Extract the date part and create a safe filename format
 # (e.g., "17. 02 March 2026" -> "02_March_2026")
-file_date_safe <- gsub(" ", "_", sub("^\\d+\\.\\s*", "", date_folder))
+file_date <- sub("^\\d+\\.\\s*", "", date_folder)
+file_date_safe <- gsub(" ", "_", file_date)
 
 las_folder <- paste0("E:/Remote Sensing Media/", date_folder, "/03. Point Clouds/")
 

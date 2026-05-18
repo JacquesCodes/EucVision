@@ -104,7 +104,8 @@ for (folder_path in dataset_folders) {
   
   # Extract the date part and create a safe filename format
   # (e.g., "17. 02 March 2026" -> "02_March_2026")
-  file_date_safe <- gsub(" ", "_", sub("^\\d+\\.\\s*", "", date_folder))
+  file_date <- sub("^\\d+\\.\\s*", "", date_folder)
+  file_date_safe <- gsub(" ", "_", file_date)
   
   print(paste("================================================================"))
   print(paste("PROCESSING DATASET:", date_folder))
@@ -152,7 +153,7 @@ for (folder_path in dataset_folders) {
     mutate(Tree = round(Tree, 2)) %>%  # Force 2 decimal precision ---
     select(-any_of(c("group_ulid", "N_GM", "id", "N_FG", "N_BG", "BBox")))
   
-  # --- APPLIED CRS FIX 2: THE CROWN POLYGONS ---
+  # --- APPLIED CRS FIX: THE CROWN POLYGONS ---
   # Force the tree polygons to inherit the master grid immediately upon loading
   st_crs(trees) <- st_crs(baseline_dtm)
   

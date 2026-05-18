@@ -8,7 +8,8 @@
 # Description: Automates the batch processing of multiple dates. Aggregates 
 #              individual spatial plot shapefiles into a single continuous 
 #              spatial dataframe, applies temporal mortality filtering, and 
-#              exports the cleaned vectors. Includes shapefile routing overrides.
+#              exports the cleaned vectors. Includes shapefile routing overrides
+#              and a spatial grid reversal QA/QC check (Failsafe 4).
 # ──────────────────────────────────────────────────────────────────────────────
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -16,6 +17,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 library(sf)      # Core package for spatial vector operations
 library(dplyr)   # Core package for data wrangling and piping
+library(stringr) # String manipulation
 library(tictoc)  # For tracking script execution time
 
 tic()
@@ -37,7 +39,7 @@ csv_path <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc
 
 # --- RUN CONTROLS ---
 # Set to a specific folder name to run only that dataset, or set to NULL for full batch.
-target_date_override <- "14. 06 February 2026"
+target_date_override <- NULL
 
 # --- EXCLUDE LIST ---
 exclude_list <- c("01. 25 February 2025",
@@ -52,8 +54,9 @@ if (!is.null(target_date_override)) {
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 3. CSV Spatial Baseline Locking ####
+# 3. Baseline Locking (CSV & Spatial) ####
 # ──────────────────────────────────────────────────────────────────────────────
+# --- CSV Baseline ---
 # Load the master CSV baseline once into memory before the loop
 master_csv_data <- read.csv(csv_path) %>% mutate(Tree = round(as.numeric(Tree), 2))
 master_csv_data$Parsed_Death_Date <- as.Date(master_csv_data$Death_Date, format="%d-%m-%Y")
@@ -66,6 +69,25 @@ csv_shapefile_baseline <- master_csv_data %>%
 legacy_sf_count <- nrow(csv_shapefile_baseline) # This guarantees exactly 3144!
 print(paste("Global Spatial Baseline Set To:", legacy_sf_count, "trees."))
 
+# --- Spatial Baseline (For Failsafe 4) ---
+spatial_base_dir <- "E:/Remote Sensing Media"
+spatial_baseline_folder <- "02. 01 September 2025"
+spatial_baseline_safe <- gsub(" ", "_", sub("^\\d+\\.\\s*", "", spatial_baseline_folder))
+
+baseline_shp_path <- file.path(spatial_base_dir, spatial_baseline_folder, "09. Crown Metrics", 
+                               paste0("Crown_Metrics_", spatial_baseline_safe, ".shp"))
+
+if (!file.exists(baseline_shp_path)) {
+  stop("CRITICAL ERROR: Spatial baseline shapefile not found! Run master pipeline for baseline first.")
+}
+
+print("Loading Master Spatial Baseline Metrics for Grid Reversal QA/QC...")
+baseline_trees <- st_read(baseline_shp_path, quiet = TRUE) %>%
+  rename(any_of(c("Compartment" = "Cmprtmn", "Compartment" = "Compartmen"))) %>% 
+  mutate(
+    Tree = round(Tree, 2),
+    UID = paste(Compartment, Plot, Tree, sep = "_")
+  )
 
 # ──────────────────────────────────────────────────────────────────────────────
 # MASTER BATCH LOOP START ####
@@ -75,17 +97,17 @@ for (folder_path in dataset_folders) {
   date_folder <- basename(folder_path)
   
   # 1. Extract the raw text date (e.g., "06 February 2026")
-  raw_date_string <- sub("^\\d+\\.\\s*", "", date_folder)
+  file_date <- sub("^\\d+\\.\\s*", "", date_folder)
   
   # 2. Create the safe filename version with underscores
-  file_date_safe <- gsub(" ", "_", raw_date_string)
+  file_date_safe <- gsub(" ", "_", file_date)
   
   print("================================================================")
   print(paste("PROCESSING DATASET:", date_folder))
   print("================================================================")
   
   # 3. Parse the raw text string into an actual R Date object
-  current_flight_date <- as.Date(raw_date_string, format="%d %B %Y")
+  current_flight_date <- as.Date(file_date, format="%d %B %Y")
   
   if(is.na(current_flight_date)) {
     print(paste("-> WARNING: Date parsing failed. Skipping", date_folder))
@@ -155,7 +177,7 @@ for (folder_path in dataset_folders) {
   alive_count <- nrow(csv_alive)
   
   print(paste("   Legacy Shapefile Baseline:", legacy_sf_count))
-  print(paste("   Alive on", raw_date_string, ":", alive_count))
+  print(paste("   Alive on", file_date, ":", alive_count))
   print(paste("   Trees flagged as Dead since baseline:", legacy_sf_count - alive_count))
   
   # ---------------------------------------------------------
@@ -175,29 +197,24 @@ for (folder_path in dataset_folders) {
     csv_for_binding <- csv_alive
     
   } else {
-    # --- NEW DIAGNOSTIC CODE ---
     print("\n--- DIAGNOSTIC: FINDING MISMATCHED PLOTS FOR FAILSAFE 1 ---")
     
-    # Calculate expected counts based on alive trees for this date
     diag_csv_counts <- csv_alive %>% 
       group_by(Plot) %>% 
       summarise(Expected = n(), .groups = "drop")
     
-    # Calculate actual counts from the shapefiles currently loaded
     diag_sf_counts <- combined_sf %>% 
       st_drop_geometry() %>% 
       mutate(Plot = as.numeric(gsub("\\D", "", Plot_shp))) %>% 
       group_by(Plot) %>% 
       summarise(Actual = n(), .groups = "drop")
     
-    # Join and find where the numbers don't match
     diag_mismatch <- full_join(diag_csv_counts, diag_sf_counts, by="Plot") %>% 
       filter(is.na(Expected) | is.na(Actual) | Expected != Actual)
     
     print("Here are the plots with missing or extra features:")
-    print(diag_mismatch, n = Inf) # n = Inf ensures all mismatched rows print to console
+    print(diag_mismatch, n = Inf) 
     print("-----------------------------------------------------------")
-    # ---------------------------
     
     stop(paste("\nCRITICAL ERROR - FAILSAFE 1 TRIGGERED FOR", date_folder, 
                "\nShapefile features (", raw_sf_count, ") do NOT match the alive trees (", alive_count, ").",
@@ -208,10 +225,8 @@ for (folder_path in dataset_folders) {
   # ---------------------------------------------------------
   # FAILSAFE 2: Pre-Bind Plot Consistency Check
   # ---------------------------------------------------------
-  # Before gluing the datasets together, verify the per-plot counts match perfectly!
   csv_plot_counts <- csv_for_binding %>% group_by(Plot) %>% summarise(Expected = n(), .groups = "drop")
   
-  # Extract the Plot Number dynamically from the 'Plot_shp' attribute
   sf_plot_counts <- combined_sf %>% 
     st_drop_geometry() %>% 
     mutate(Plot = as.numeric(gsub("\\D", "", Plot_shp))) %>% 
@@ -251,7 +266,59 @@ for (folder_path in dataset_folders) {
     print("   -> FAILSAFE 3 PASSED: Final geometry count matches alive trees.")
   }
   
-  # Clean up temporary structural columns
+  # --- APPLIED CRS FIX: THE CROWN POLYGONS ---
+  # Force the tree polygons to inherit the Master Spatial Baseline Metrics CRS immediately
+  st_crs(combined_sf) <- st_crs(baseline_trees)
+  
+  # ---------------------------------------------------------
+  # FAILSAFE 4: Spatial Grid Reversal QA/QC Check
+  # ---------------------------------------------------------
+  print("   -> Running Failsafe 4: Spatial Grid Reversal Check...")
+  
+  # Format target features with UID to match spatial baseline
+  target_trees <- combined_sf %>%
+    mutate(
+      Tree = round(as.numeric(Tree), 2),
+      UID = paste(Compartment, Plot, Tree, sep = "_")
+    )
+  
+  common_uids <- intersect(baseline_trees$UID, target_trees$UID)
+  
+  if(length(common_uids) == 0) {
+    stop(paste("CRITICAL ERROR - FAILSAFE 4 TRIGGERED in", date_folder, "- No common UIDs found with spatial baseline!"))
+  }
+  
+  # Subset and align the dataframes so row 1 in baseline exactly matches row 1 in target
+  base_sub <- baseline_trees[match(common_uids, baseline_trees$UID), ]
+  targ_sub <- target_trees[match(common_uids, target_trees$UID), ]
+  
+  # Calculate pairwise distance element-by-element
+  distances <- st_distance(base_sub, targ_sub, by_element = TRUE)
+  
+  # Evaluate using the 0.1m tolerance
+  targ_sub$Touching_Baseline <- as.numeric(distances) <= 0.1
+  
+  # Aggregate stats per plot to check for severe reversals
+  plot_stats <- st_drop_geometry(targ_sub) %>%
+    group_by(Compartment, Plot) %>%
+    summarise(
+      Total_Trees = n(),
+      Trees_Moved = sum(Touching_Baseline == FALSE),
+      Pct_Flipped = (Trees_Moved / Total_Trees) * 100,
+      .groups = 'drop'
+    ) %>%
+    filter(Pct_Flipped >= 25)
+  
+  if(nrow(plot_stats) > 0) {
+    print("\n--- CRITICAL SPATIAL GRID REVERSALS DETECTED ---")
+    print(plot_stats %>% arrange(desc(Pct_Flipped)))
+    stop(paste("CRITICAL ERROR - FAILSAFE 4 TRIGGERED in", date_folder, 
+               "- Plot geometry reversal detected! Halting pipeline to prevent bad spatial export."))
+  } else {
+    print("   -> FAILSAFE 4 PASSED: All plots spatially aligned with baseline.")
+  }
+  
+  # Clean up temporary structural columns before export
   combined_sf <- combined_sf %>% select(-Parsed_Death_Date, -Is_Alive, -Plot_shp)
   
   # ────────────────────────────────────────────────────────────────────────────
@@ -266,14 +333,14 @@ for (folder_path in dataset_folders) {
   writeLines(pure_epsg_2048_wkt, prj_teams)
   writeLines(pure_epsg_2048_wkt, prj_ssd)
   
-  print("-> All Failsafes passed. Geometries filtered and exported.")
+  print("-> All Failsafes passed. Geometries filtered, validated, and exported.")
   
   # Clean up memory before the next loop
-  rm(combined_sf, csv_for_binding, csv_plot_counts, sf_plot_counts, plot_mismatch)
+  rm(combined_sf, csv_for_binding, csv_plot_counts, sf_plot_counts, plot_mismatch, target_trees, base_sub, targ_sub, distances)
   gc()
 }
 
 print("================================================================")
-print("BATCH PIPELINE COMPLETE! All datasets safely merged and filtered.")
+print("BATCH PIPELINE COMPLETE! All datasets safely merged, filtered, and validated.")
 print("================================================================")
 toc()

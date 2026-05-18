@@ -39,11 +39,12 @@ library(rgl)
 date_folder <- "20. 23 March 2026"
 
 # Define the specific plot number to visualize
-Number <- "37"
+Number <- "38"
 
 # Extract the date part and create a safe filename format
 # (e.g., "17. 02 March 2026" -> "02_March_2026")
-file_date_safe <- gsub(" ", "_", sub("^\\d+\\.\\s*", "", date_folder))
+file_date <- sub("^\\d+\\.\\s*", "", date_folder)
+file_date_safe <- gsub(" ", "_", file_date)
 
 # Base path to the remote sensing media dataset
 myPath <- paste0("E:/Remote Sensing Media/",date_folder,"/")
