@@ -20,7 +20,7 @@ Execution: Run individually on the dates with the best ground visibility.
 Purpose: Stacks the individual temporal DTMs created in Script 01. It takes the pixel-wise maximum across multiple flights to confidently overwrite SfM sinkholes, producing a single, highly accurate "Ultimate Baseline DTM" for the entire study site.
 
 03. EucVision Crown Polygons Merger.R
-Purpose: Acts as the bridge between manual QGIS extraction and the automated R pipeline. It reads numerical plot shapefiles, merges them into a continuous spatial dataframe, and binds them to the master CSV template.
+Purpose: Acts as the critical bridge between manual QGIS extraction and the automated R pipeline. It batch-merges plot shapefiles into a continuous spatial dataframe, binds them to the master CSV template, and applies dynamic temporal mortality filtering. The script also enforces strict CRS stability and runs rigorous spatial QA/QC failsafes to validate geometry counts and prevent coordinate reversals.
 
 Execution: Must be run after manually generating QGIS crown polygons for a new flight.
 
