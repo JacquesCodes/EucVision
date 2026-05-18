@@ -19,10 +19,6 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # 1. Setup and Imports ####
 # ──────────────────────────────────────────────────────────────────────────────
-if (!require("dplyr")) install.packages("dplyr")
-if (!require("readr")) install.packages("readr")
-if (!require("stringr")) install.packages("stringr")
-
 library(dplyr)
 library(readr)
 library(stringr)
@@ -204,16 +200,17 @@ if (length(csv_list) > 0) {
         Stem_Diameter = as.numeric(Stem_Diameter)
       )
   )
-  
-  # Dynamic Outlier Filtering (Dead trees with NA safely bypass this)
+
+  # Dynamic Outlier Filtering
   master_dataset <- master_dataset %>%
     group_by(Date) %>%
     mutate(
-      Flight_99th = quantile(Tree_Height, probs = 0.99, na.rm = TRUE),
-      Tree_Height = ifelse(Tree_Height > (Flight_99th + 5), NA, Tree_Height)
+      # Safely handle dates that have purely field data and zero drone heights
+      Flight_99th = ifelse(all(is.na(Tree_Height)), NA, quantile(Tree_Height, probs = 0.99, na.rm = TRUE)),
+      Tree_Height = ifelse(!is.na(Flight_99th) & Tree_Height > (Flight_99th + 5), NA, Tree_Height)
     ) %>%
     select(-Flight_99th) %>% 
-    ungroup() 
+    ungroup()
   
   # ────────────────────────────────────────────────────────────────────────────
   # 6. Chronological & Spatial Sorting & Export ####

@@ -46,6 +46,10 @@ for (dir in c(cropped_dir, denoised_dir, classified_dir, dtm_dir)) {
   if (!dir.exists(dir)) dir.create(dir, recursive = TRUE)
 }
 
+# Enable parallel processing for lidR operations to run across 6 CPU logical processors.
+# Note: Users should adjust 'workers' based on their available CPU logical processors and RAM.
+plan(multisession, workers = 6)
+
 # ──────────────────────────────────────────────────────────────────────────────
 # 3. Spatial Data Loading & Boundary Definition ####
 # ──────────────────────────────────────────────────────────────────────────────
@@ -55,10 +59,6 @@ boundary <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skrip
 # ──────────────────────────────────────────────────────────────────────────────
 # 3.5. Point Cloud Cropping (Fixing Sparse Edges) ####
 # ──────────────────────────────────────────────────────────────────────────────
-
-# Enable parallel processing for lidR operations to run across 6 CPU logical processors.
-# Note: Users should adjust 'workers' based on their available CPU logical processors and RAM.
-plan(multisession, workers = 6)
 
 # Load the new OAL boundary to clip the raw data
 oal_boundary <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/5. IMPACT OAL Boundaries/IMPACT Boundaries EPSG 2048.shp")
@@ -82,7 +82,6 @@ toc()
 # ──────────────────────────────────────────────────────────────────────────────
 # 4. Noise Removal (Statistical Outlier Removal) ####
 # ──────────────────────────────────────────────────────────────────────────────
-plan(multisession, workers = 6)
 
 # NEW: Load the dense, cropped point clouds instead of the raw ones
 ctg_raw <- readLAScatalog(cropped_dir)
@@ -106,7 +105,6 @@ toc()
 # ──────────────────────────────────────────────────────────────────────────────
 # 5. Ground Classification (Progressive TIN Densification) ####
 # ──────────────────────────────────────────────────────────────────────────────
-plan(multisession, workers = 6)
 
 # Reload the explicitly denoised 100x100m chunks from disk
 ctg_denoised <- readLAScatalog(denoised_dir)
@@ -136,7 +134,6 @@ toc()
 # ──────────────────────────────────────────────────────────────────────────────
 # 6. DTM Generation (Site Level) ####
 # ──────────────────────────────────────────────────────────────────────────────
-plan(multisession, workers = 6) 
 
 # Reload the explicitly classified chunks from disk
 ctg_classified <- readLAScatalog(classified_dir)
