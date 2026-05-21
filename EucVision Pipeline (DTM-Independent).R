@@ -32,6 +32,9 @@ library(sp)
 library(terra)
 library(exactextractr)
 
+# The strict, exact OGC Well-Known Text (WKT) for EPSG:2048 to force the South/West axis fix
+pure_epsg_2048_wkt <- 'PROJCS["Hartebeesthoek94 / Lo19",GEOGCS["Hartebeesthoek94",DATUM["Hartebeesthoek94",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6148"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4148"]],PROJECTION["Transverse_Mercator"],PARAMETER["latitude_of_origin",0],PARAMETER["central_meridian",19],PARAMETER["scale_factor",1],PARAMETER["false_easting",0],PARAMETER["false_northing",0],UNIT["metre",1,AUTHORITY["EPSG","9001"]],AXIS["Southing",SOUTH],AXIS["Westing",WEST],AUTHORITY["EPSG","2048"]]'
+
 # ──────────────────────────────────────────────────────────────────────────────
 # 2. Configuration & Path Management ####
 # ──────────────────────────────────────────────────────────────────────────────
@@ -91,50 +94,50 @@ trees <- trees %>%
 # ──────────────────────────────────────────────────────────────────────────────
 # 4. Point Cloud Cropping (Plot Level) ####
 # ──────────────────────────────────────────────────────────────────────────────
-plan(multisession) # Enable parallel processing
+
 tic()              # Track execution time
 
 # Check if we need to split processing based on Top/Bottom files
 if (length(top_files) > 0 && length(bot_files) > 0) {
   print("Top and Bottom point clouds detected. Splitting processing by Plot ID...")
-
+  
   # Split plot boundaries by ID to align with the physical flight paths
   plots_top <- plots %>% filter(id <= 21)
   plots_bot <- plots %>% filter(id >= 22)
-
+  
   # Initialize separate LiDAR catalogs
   ctg_top <- readLAScatalog(top_files)
   ctg_bot <- readLAScatalog(bot_files)
-
+  
   # Configure engine settings for TOP cropping
   opt_independent_files(ctg_top) <- FALSE
   opt_select(ctg_top) <- "xyz"
   opt_output_files(ctg_top) <- paste0(clipped_dir, "Plot_{id}_", file_date_safe)
-
+  
   # Configure engine settings for BOTTOM cropping
   opt_independent_files(ctg_bot) <- FALSE
   opt_select(ctg_bot) <- "xyz"
   opt_output_files(ctg_bot) <- paste0(clipped_dir, "Plot_{id}_", file_date_safe)
-
+  
   # Execute spatial clipping operations
   print("Cropping Top plots (1-21)...")
   ctg_clipped_top <- clip_roi(ctg_top, plots_top)
-
+  
   print("Cropping Bottom plots (22-75)...")
   ctg_clipped_bot <- clip_roi(ctg_bot, plots_bot)
-
+  
   # Re-read the fully clipped directory as a single unified catalog for downstream processing
   ctg_clipped <- readLAScatalog(clipped_dir)
-
+  
 } else {
   print("Single point cloud or no Top/Bottom distinction detected. Processing entirely...")
-
+  
   # Standard processing for a single or unstructured catalog
   ctg <- readLAScatalog(las_folder)
   opt_independent_files(ctg) <- FALSE
   opt_select(ctg) <- "xyz"
   opt_output_files(ctg) <- paste0(clipped_dir, "Plot_{id}_", file_date_safe)
-
+  
   # Execute spatial clipping operations
   ctg_clipped <- clip_roi(ctg, plots)
 }
@@ -232,17 +235,49 @@ ctg_chm <- rasterize_canopy(ctg_normalised,
 print("Rasterize canopy time:")
 toc()
 
-# ──────────────────────────────────────────────────────────────────────────────
-# 8. Metric Extraction & Export ####
-# ──────────────────────────────────────────────────────────────────────────────
-tic()
+# ────────────────────────────────────────────────────────────────────────────
+# 8. Metric Extraction & Consolidation ####
+# ────────────────────────────────────────────────────────────────────────────
 
-# Calculate exact maximum tree height within each delineated crown polygon
-trees$Tree_Height <- exact_extract(ctg_chm, trees, 'max')
+# Define the dynamic paths and variables required for the Master CHM export
+single_chm_path <- file.path(chm_dir, paste0("Master_Site_CHM_Single_", file_date_safe, ".tif"))
 
-# Save to shapefile (completely overwriting old files to prevent schema errors)
-st_write(trees, paste0(metrics_dir, "Crown_Metrics_", file_date_safe, ".shp"), delete_dsn = TRUE)
+tic("Metric extraction complete")
+print("Extracting metrics and consolidating dynamic master CHM...")
 
-# Save lightweight tabular CSV data (drops the messy spatial geometry text)
-write.csv(st_drop_geometry(trees), paste0(metrics_dir, "Crown_Metrics_", file_date_safe, ".csv"), row.names = FALSE)
+# list.files gathers the paths to all the individual plot CHMs generated in step 7
+chm_files <- list.files(chm_dir, pattern = "\\.tif$", full.names = TRUE)
+# terra::vrt stitches them together logically as a Virtual Raster without duplicating files on disk
+site_chm_vrt <- terra::vrt(chm_files)
+
+# exact_extract calculates the "max" pixel value (tallest canopy point) falling inside each tree polygon
+# It is vastly faster and more memory-efficient than standard GIS extract functions.
+# (No st_crs fix needed here because we safely applied it when the trees were loaded in Section 4!)
+trees$Tree_Height <- exact_extract(site_chm_vrt, trees, 'max')
+
+# is.finite() strips out completely empty polygons that might have returned NA or Inf.
+# max() finds the absolute tallest tree across the whole site to determine our clamping ceiling.
+max_tree_height <- max(trees$Tree_Height[is.finite(trees$Tree_Height)], na.rm = TRUE)
+dynamic_cap <- ceiling(max_tree_height)
+print(paste("-> Dynamic CHM cap safely set to:", dynamic_cap, "meters"))
+
+# terra::clamp forcefully cuts off any remaining spike artifacts in the CHM above our dynamic cap
+site_chm_clamped <- terra::clamp(site_chm_vrt, lower = 0, upper = dynamic_cap)
+
+# writeRaster writes out the final, stitched, clamped CHM image
+terra::writeRaster(site_chm_clamped, filename = single_chm_path, overwrite = TRUE)
+
+# Define output paths for metric files
+out_shp_path <- file.path(metrics_dir, paste0("Crown_Metrics_", file_date_safe, ".shp"))
+out_csv_path <- file.path(metrics_dir, paste0("Crown_Metrics_", file_date_safe, ".csv"))
+
+# st_write exports the updated polygons (now containing Tree_Height). delete_dsn = TRUE allows overwriting.
+st_write(trees, out_shp_path, delete_dsn = TRUE, quiet = TRUE)
+
+# --- INJECT PURE EPSG:2048 WKT INTO .PRJ FILE ---
+prj_path <- sub("\\.shp$", ".prj", out_shp_path, ignore.case = TRUE)
+writeLines(pure_epsg_2048_wkt, prj_path)
+
+# st_drop_geometry strips the spatial mapping data so the dataframe can be written to a clean, lightweight CSV
+write.csv(st_drop_geometry(trees), out_csv_path, row.names = FALSE)
 toc()

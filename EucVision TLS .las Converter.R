@@ -38,7 +38,7 @@ date_folder <- "07. December 2025 (TLS)"
 # (e.g., "17. 02 March 2026" -> "02_March_2026")
 file_date_safe <- gsub(" ", "_", sub("^\\d+\\.\\s*", "", date_folder))
 
-# 4. Get the list of all 21 .laz files
+# 4. Get the list of all .laz files in input directory
 laz_files <- list.files(input_dir, pattern = "\\.laz$", full.names = TRUE)
 
 # 5. Loop through and process each file

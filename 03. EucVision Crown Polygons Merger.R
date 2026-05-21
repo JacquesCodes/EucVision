@@ -131,6 +131,9 @@ for (folder_path in dataset_folders) {
   } else if (date_folder == "23. 13 April 2026") {
     shapefile_source_folder <- "21. 31 March 2026"
     print(paste("-> ROUTING OVERRIDE: Using donor shapefiles from", shapefile_source_folder))
+  } else if (date_folder == "25. 29 April 2026") {
+    shapefile_source_folder <- "24. 23 April 2026"
+    print(paste("-> ROUTING OVERRIDE: Using donor shapefiles from", shapefile_source_folder))
   }
   
   # Dynamically construct paths

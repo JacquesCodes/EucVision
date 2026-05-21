@@ -36,7 +36,7 @@ library(rgl)
 # ──────────────────────────────────────────────────────────────────────────────
 # === CONFIGURE BATCH AND PLOT ===
 # Change this single variable for each new batch!
-date_folder <- "20. 23 March 2026"
+date_folder <- "07. December 2025 (TLS)"
 
 # Define the specific plot number to visualize
 Number <- "38"

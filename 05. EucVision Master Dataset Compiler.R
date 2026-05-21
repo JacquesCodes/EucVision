@@ -48,11 +48,22 @@ if (file.exists(template_csv)) {
 # ──────────────────────────────────────────────────────────────────────────────
 # 3. Run Script & Extract UAV Data ####
 # ──────────────────────────────────────────────────────────────────────────────
-main_folders <- list.dirs(src_base_dir, recursive = FALSE)
+# --- EXCLUDE LIST ---
+# Folders to ignore during the batch processing loop
+exclude_list <- c("000. Projects",
+                  "00. Baseline DTM",
+                  "00. Dataset Template", 
+                  "07. December 2025 (TLS)",
+                  "17. 02 March 2026 0.6",
+                  "17. 02 March 2026 2.4",
+                  "17. 02 March 2026 4.8",
+                  "17. 02 March 2026 19.2",
+                  "17. 03 March 2026 (Multispectral)",
+                  "20. 24 March 2026 (Multispectral)")
 
-# Remove TLS folder
-folder_to_exclude <- "07. December 2025 (TLS)"
-main_folders <- main_folders[basename(main_folders) != folder_to_exclude]
+# Scan the base directory and filter for valid date folders
+folders <- list.dirs(src_base_dir, recursive = FALSE)
+main_folders <- folders[grepl("^\\d{2}\\.", basename(folders)) & !basename(folders) %in% exclude_list]
 
 csv_list <- list()
 
@@ -200,7 +211,7 @@ if (length(csv_list) > 0) {
         Stem_Diameter = as.numeric(Stem_Diameter)
       )
   )
-
+  
   # Dynamic Outlier Filtering
   master_dataset <- master_dataset %>%
     group_by(Date) %>%
