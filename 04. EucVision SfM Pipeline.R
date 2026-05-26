@@ -77,7 +77,7 @@ if (!is.null(target_date_override)) {
 print("Loading static spatial data and initializing parallel processing...")
 
 # st_read loads the vector data. quiet = TRUE suppresses messy console output.
-plots_buffered_unsorted <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/1. LAScatalog Plot Boundaries/LAScatalog Plot Boundaries.shp", quiet = TRUE)
+plots_buffered_unsorted <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/1. LAScatalog Plot Boundaries/LAScatalog_Plot_Boundaries_ESRI_102562.shp", quiet = TRUE)
 
 # Force the clipping polygons to perfectly inherit the master DTM's spatial grid (CRS)
 st_crs(plots_buffered_unsorted) <- st_crs(baseline_dtm)

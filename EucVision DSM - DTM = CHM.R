@@ -76,7 +76,7 @@ dest_backup_dir <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skrips
 # 3. Static Spatial Data Loading ####
 # ──────────────────────────────────────────────────────────────────────────────
 
-plots_buffered_unsorted <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/1. LAScatalog Plot Boundaries/LAScatalog Plot Boundaries.shp")
+plots_buffered_unsorted <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/1. LAScatalog Plot Boundaries/LAScatalog_Plot_Boundaries_ESRI_102562.shp")
 
 # THE CLIPPING BOUNDARIES
 # Force the clipping polygons to perfectly inherit the master DTM's spatial grid
@@ -85,7 +85,7 @@ st_crs(plots_buffered_unsorted) <- st_crs(baseline_dtm)
 plots <- plots_buffered_unsorted[order(plots_buffered_unsorted$id), ]
 
 # Load the Impact Plot & Compartment Boundaries to mask Top and Bottom DSMs
-impact_bounds <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/4. IMPACT Plot & Compartment Boundaries/IMPACT Plot & Compartment Boundaries EPSG 2048.shp", quiet = TRUE)
+impact_bounds <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/4. IMPACT Plot & Compartment Boundaries/IMPACT_Plot_&_Compartment_Boundaries_EPSG_2048.shp", quiet = TRUE)
 if (is.na(st_crs(impact_bounds)$epsg) || st_crs(impact_bounds)$epsg != 2048) {
   impact_bounds <- st_transform(impact_bounds, 2048)
 }

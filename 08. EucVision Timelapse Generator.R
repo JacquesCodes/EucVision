@@ -36,11 +36,13 @@ terraOptions(memfrac = 0.75, tempdir = temp_dir)
 
 # --- INPUT/OUTPUT CONFIGURATION ---
 # 1. Define the target plot boundaries for cropping the viewing extent
-shp_path <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/16. Plot 37-40 Shapefile/Plot 37-40.shp"
+
+shp_path <-"C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/13. Plot 27-28 Shapefile/Plot_27-28_ESRI_102562.shp"
+# shp_path <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/12. Plot 37-40 Shapefile/Plot_37-40_ESRI_102562.shp"
 plot_shp <- st_read(shp_path, quiet = TRUE)
 
 # 2. Define the static Normal Plot Boundaries that will be overlaid
-normal_plot_path <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/2. Plot Boundaries/Normal Plot Boundaries.shp"
+normal_plot_path <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/2. Plot Boundaries/Normal_Plot_Boundaries_ESRI_102562.shp"
 normal_plots <- st_read(normal_plot_path, quiet = TRUE)
 
 # Directory to save the temporary clipped PNGs and the final video outputs
@@ -183,7 +185,12 @@ for (folder_path in dataset_folders) {
     out_png <- file.path(output_dir, paste0("Timelapse_", date_str, "_", basename(tif_file), ".png"))
     
     # Setup high-resolution canvas
-    png(out_png, width = 3600, height = 1600, res = 300)
+    
+    # For Plot 27 & 28
+    png(out_png, width = 1600, height = 1700, res = 300)
+    
+    # For Plot 37-40
+    # png(out_png, width = 3600, height = 1600, res = 300)
     
     # Crush all margins to 0 so the imagery fills the entire canvas seamlessly
     par(mar = c(0, 0, 0, 0)) 
@@ -247,7 +254,7 @@ if (length(clipped_images) > 0) {
   
   video_path <- file.path(output_dir, "Timelapse.mp4")
   
-  # Compile all generated PNGs into a 10 FPS video
+  # Compile all generated PNGs into a 5 FPS video
   av_encode_video(clipped_images, output = video_path, framerate = 5)
   
   print(paste("High-Res Time-lapse video saved to:", video_path))

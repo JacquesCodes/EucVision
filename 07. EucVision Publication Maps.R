@@ -6,11 +6,9 @@
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
 # ──────────────────────────────────────────────────────────────────────────────
 # Description: Functions as a targeted visual inspection and cartographic mapping 
-#              tool for individual field plots. It loads normalized point clouds 
-#              and Canopy Height Models (CHMs), applies focal smoothing matrices 
-#              to mitigate raster noise, and generates both interactive 3D point 
-#              cloud renders and publication-ready 2D spatial maps complete with 
-#              cartographic annotations (scale bars, north arrows) using ggplot2.
+#              tool. It loads normalized point clouds and Canopy Height Models (CHMs), 
+#              applies focal smoothing matrices to mitigate raster noise, and generates 
+#              interactive 3D point cloud renders and publication-ready 2D spatial maps.
 # ──────────────────────────────────────────────────────────────────────────────
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -34,42 +32,68 @@ library(tidyterra)
 # ──────────────────────────────────────────────────────────────────────────────
 # 2. Configuration & Path Management ####
 # ──────────────────────────────────────────────────────────────────────────────
+# === PIPELINE TOGGLES ===
+process_whole_site <- TRUE    # Set to TRUE to process the Master Site file, FALSE for individual plots
+save_smoothed_output <- TRUE  # Set to TRUE to export the smoothed CHM back to the disk
+
 # === CONFIGURE BATCH AND PLOT ===
 # Change this single variable for each new batch!
-date_folder <- "20. 23 March 2026"
+date_folder <- "26. 08 May 2026"
 
-# Define the specific plot number to visualize
+# Define the specific plot number to visualize (Used if process_whole_site == FALSE)
 Number <- 38
 
+# --- DYNAMIC DATE EXTRACTION ---
 # Extract the date part and create a safe filename format
-# (e.g., "17. 02 March 2026" -> "02_March_2026")
+# (e.g., "26. 08 May 2026" -> "08_May_2026")
 file_date <- sub("^\\d+\\.\\s*", "", date_folder)
 file_date_safe <- gsub(" ", "_", file_date)
 
 # Base path to the remote sensing media dataset
 myPath <- paste0("E:/Remote Sensing Media/", date_folder, "/")
 
-# Dynamically construct the file prefixes based on the targeted plot and date
-name_clipped <- paste0("Plot_", Number, "_", file_date_safe)
-name_classified <- paste0(name_clipped, "_classified")
-name_normalised <- paste0(name_classified, "_normalised")
-name_chm <- paste0(name_normalised, "_chm")
+# --- PATH CONSTRUCTION ---
+if (process_whole_site) {
+  # Dynamic path for site-wide processing
+  name_chm <- paste0("Master_Site_CHM_Single_", file_date_safe)
+  path_chm <- paste0(myPath, "07. Canopy Height Models/", name_chm, ".tif")
+  
+  # Set point cloud path to NULL to prevent rendering site-wide data (hardware safety)
+  path_normalised <- NULL 
+  
+  # Set plot subtitle for cartography
+  map_subtitle <- paste0("Master Site Level - ", file_date)
+  
+} else {
+  # Dynamic paths for individual plot processing
+  name_clipped <- paste0("Plot_", Number, "_", file_date_safe)
+  name_classified <- paste0(name_clipped, "_classified")
+  name_normalised <- paste0(name_classified, "_normalised")
+  name_chm <- paste0(name_normalised, "_chm")
+  
+  path_normalised <- paste0(myPath, "06. Point Clouds Normalised/", name_normalised, ".las")
+  path_chm <- paste0(myPath, "07. Canopy Height Models/", name_chm, ".tif")
+  
+  # Set plot subtitle for cartography
+  map_subtitle <- paste0("Plot ", Number, " - ", file_date)
+}
 
-# Build the full absolute file paths
-path_normalised <- paste0(myPath, "06. Point Clouds Normalised/", name_normalised, ".las")
-path_chm <- paste0(myPath, "07. Canopy Height Models/", name_chm, ".tif")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 3. Data Loading & Preprocessing ####
 # ──────────────────────────────────────────────────────────────────────────────
 # --- SAFELY LOAD & FILTER DATA ---
 
-# 3.1 Normalised Point Cloud
-if (file.exists(path_normalised)) {
+# 3.1 Normalised Point Cloud (Skipped if process_whole_site is TRUE)
+if (!is.null(path_normalised) && file.exists(path_normalised)) {
   las_normalised <- readLAS(path_normalised)
   message("Loaded: ", name_normalised, ".las")
 } else {
-  message("Skipped: Could not find folder or file for 06. Point Clouds Normalised")
+  if(process_whole_site) {
+    message("Skipped: Point cloud loading disabled for master site to conserve memory.")
+  } else {
+    message("Skipped: Could not find folder or file for 06. Point Clouds Normalised")
+  }
   las_normalised <- NULL
 }
 
@@ -87,13 +111,25 @@ if (file.exists(path_chm)) {
   
   # Apply the focal smoothing function to the filtered CHM to remove micro-noise
   smoothed_chm <- terra::focal(las_chm, w = w, fun = max, na.rm = TRUE)
-  
   message("Loaded and smoothed: ", name_chm, ".tif")
   
+  # --- Export Smoothed CHM ---
+  if (save_smoothed_output) {
+    # Dynamically build output path in the same directory as the input
+    out_dir <- dirname(path_chm)
+    original_filename <- basename(path_chm)
+    smoothed_filename <- paste0("Smoothed_", original_filename)
+    out_path <- file.path(out_dir, smoothed_filename)
+    
+    # Write raster to disk
+    terra::writeRaster(smoothed_chm, filename = out_path, overwrite = TRUE)
+    message("Successfully exported smoothed CHM to: ", out_path)
+  }
+  
 } else {
-  message("Skipped: Could not find folder or file for 07. Canopy Height Models")
+  message("Error: Could not find CHM file at specified path:\n", path_chm)
   las_chm <- NULL
-  smoothed_chm <- NULL # Ensure this is null if the file didn't load
+  smoothed_chm <- NULL 
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -141,7 +177,7 @@ if (!is.null(smoothed_chm)) {
     # Map formatting and dynamic titles
     labs(
       title = "Smoothed Canopy Height Model",
-      subtitle = paste0("Plot ", Number, " - ", file_date),
+      subtitle = map_subtitle, # Dynamically set based on pipeline toggle
       x = "Longitude",
       y = "Latitude"
     ) +
