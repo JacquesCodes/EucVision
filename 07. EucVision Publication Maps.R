@@ -35,15 +35,15 @@ library(tidyterra)
 # 2. Configuration & Path Management ####
 # ──────────────────────────────────────────────────────────────────────────────
 # === PIPELINE TOGGLES ===
-process_whole_site <- TRUE    # Set to TRUE to process the Master Site file, FALSE for individual plots
-save_smoothed_output <- TRUE  # Set to TRUE to export the smoothed CHM back to the disk
+process_whole_site <- FALSE    # Set to TRUE to process the Master Site file, FALSE for individual plots
+save_smoothed_output <- FALSE  # Set to TRUE to export the smoothed CHM back to the disk
 
 # === CONFIGURE BATCH AND PLOT ===
 # Change this single variable for each new batch!
-date_folder <- "26. 08 May 2026"
+date_folder <- "27. 25 May 2026"
 
 # Define the specific plot number to visualize (Used if process_whole_site == FALSE)
-Number <- 38
+Number <- 44
 
 # --- DYNAMIC DATE EXTRACTION ---
 # Extract the date part and create a safe filename format
@@ -120,7 +120,7 @@ if (file.exists(path_chm)) {
     # Dynamically build output path in the same directory as the input
     out_dir <- dirname(path_chm)
     original_filename <- basename(path_chm)
-    smoothed_filename <- paste0("Smoothed_", original_filename)
+    smoothed_filename <- paste0("A_Smoothed_", original_filename)
     out_path <- file.path(out_dir, smoothed_filename)
     
     # Write raster to disk

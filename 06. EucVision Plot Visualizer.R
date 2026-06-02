@@ -36,7 +36,7 @@ library(rgl)
 # ──────────────────────────────────────────────────────────────────────────────
 # === CONFIGURE BATCH AND PLOT ===
 # Change this single variable for each new batch!
-date_folder <- "07. December 2025 (TLS)"
+date_folder <- "20. 23 March 2026"
 
 # Define the specific plot number to visualize
 Number <- "38"
@@ -149,7 +149,7 @@ if (!is.null(las_classified)) {
 
 # 4.3 Plot Height-Normalised Point Cloud
 if (!is.null(las_normalised)) {
-  plot(las_normalised, bg = "white")
+  plot(las_normalised, color = "RGB", size = 3, bg = "white")
 }
 
 # 4.4 Plot 2D Canopy Height Model (CHM)

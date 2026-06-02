@@ -25,12 +25,16 @@ print("Fusing multiple temporal DTMs into an Ultimate Baseline DTM...")
 # ──────────────────────────────────────────────────────────────────────────────
 # Define the paths to your individual, smoothed baseline DTMs
 # These represent different flight dates where ground visibility may have varied
-path_dtm_1 <- "E:/Remote Sensing Media/03. 30 October 2025/05b. Baseline Plot DTMs/Master_Baseline_DTM_Smoothed_30_October_2025.tif"
-path_dtm_2 <- "E:/Remote Sensing Media/04. 07 November 2025/05b. Baseline Plot DTMs/Master_Baseline_DTM_Smoothed_07_November_2025.tif"
-path_dtm_3 <- "E:/Remote Sensing Media/05. 14 November 2025/05b. Baseline Plot DTMs/Master_Baseline_DTM_Smoothed_14_November_2025.tif"
+# path_dtm_1 <- "E:/Remote Sensing Media/03. 30 October 2025/05b. Baseline Plot DTMs/Master_Baseline_DTM_Smoothed_30_October_2025.tif"
+# path_dtm_2 <- "E:/Remote Sensing Media/04. 07 November 2025/05b. Baseline Plot DTMs/Master_Baseline_DTM_Smoothed_07_November_2025.tif"
+# path_dtm_3 <- "E:/Remote Sensing Media/05. 14 November 2025/05b. Baseline Plot DTMs/Master_Baseline_DTM_Smoothed_14_November_2025.tif"
+path_dtm_1 <- "E:/Remote Sensing Media/03. 30 October 2025/05b. Baseline Plot DTMs/Master_Baseline_DTM_Single_30_October_2025.tif"
+path_dtm_2 <- "E:/Remote Sensing Media/04. 07 November 2025/05b. Baseline Plot DTMs/Master_Baseline_DTM_Single_07_November_2025.tif"
+path_dtm_3 <- "E:/Remote Sensing Media/05. 14 November 2025/05b. Baseline Plot DTMs/Master_Baseline_DTM_Single_14_November_2025.tif"
 
 # Define the final output destination
-output_path <- "E:/Remote Sensing Media/00. Baseline DTM/Ultimate_Ensemble_Baseline_DTM.tif"
+# output_path <- "E:/Remote Sensing Media/00. Baseline DTM/Ultimate_Ensemble_Baseline_DTM.tif"
+output_path <- "E:/Remote Sensing Media/00. Baseline DTM/IMPACT_OAL_Baseline_DTM.tif"
 
 # Ensure the output directory exists before attempting to write out
 if (!dir.exists(dirname(output_path))) dir.create(dirname(output_path), recursive = TRUE)

@@ -59,6 +59,7 @@ exclude_list <- c("000. Projects",
                   "17. 02 March 2026 4.8",
                   "17. 02 March 2026 19.2",
                   "17. 03 March 2026 (Multispectral)",
+                  "20. 23 March 2026 0.6cm",
                   "20. 24 March 2026 (Multispectral)")
 
 # Scan the base directory and filter for valid date folders
