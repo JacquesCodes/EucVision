@@ -39,7 +39,7 @@ library(rgl)
 date_folder <- "20. 23 March 2026"
 
 # Define the specific plot number to visualize
-Number <- "38"
+Number <- "28"
 
 # Extract the date part and create a safe filename format
 # (e.g., "17. 02 March 2026" -> "02_March_2026")

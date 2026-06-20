@@ -29,21 +29,19 @@ library(ggplot2)
 library(ggspatial)
 library(tidyterra)
 
-# Hi
-
 # ──────────────────────────────────────────────────────────────────────────────
 # 2. Configuration & Path Management ####
 # ──────────────────────────────────────────────────────────────────────────────
 # === PIPELINE TOGGLES ===
-process_whole_site <- FALSE    # Set to TRUE to process the Master Site file, FALSE for individual plots
-save_smoothed_output <- FALSE  # Set to TRUE to export the smoothed CHM back to the disk
+process_whole_site <- TRUE    # Set to TRUE to process the Master Site file, FALSE for individual plots
+save_smoothed_output <- TRUE  # Set to TRUE to export the smoothed CHM back to the disk
 
 # === CONFIGURE BATCH AND PLOT ===
 # Change this single variable for each new batch!
-date_folder <- "27. 25 May 2026"
+date_folder <- "24. 23 April 2026"
 
 # Define the specific plot number to visualize (Used if process_whole_site == FALSE)
-Number <- 44
+Number <- 28
 
 # --- DYNAMIC DATE EXTRACTION ---
 # Extract the date part and create a safe filename format

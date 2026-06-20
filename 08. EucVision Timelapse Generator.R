@@ -60,12 +60,12 @@ species_colors <- c(
 )
 
 # Color palette mapped to the Normal Plot Spacings
-plot_colors <- c(
-  "1m_Spacing"   = "#eedf13",
-  "2m_Spacing"   = "#f10070",
-  "3m_Spacing"   = "#15e94e",
+plot_colors <- c(                # Google Colab alternative
+  "1m_Spacing"   = "#eedf13",    # #118AB2
+  "2m_Spacing"   = "#f10070",    # #EF476F
+  "3m_Spacing"   = "#15e94e",    # #FFD166
   "3x2m_Spacing" = "#404040",
-  "5m_Spacing"   = "#ff0004"
+  "5m_Spacing"   = "#ff0004"     # #06D6A0
 )
 
 # ──────────────────────────────────────────────────────────────────────────────

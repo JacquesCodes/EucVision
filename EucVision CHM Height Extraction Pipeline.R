@@ -31,7 +31,7 @@ base_dir <- "E:/Remote Sensing Media"
 # --- RUN CONTROLS ---
 # Set to a specific folder name to run only that dataset (e.g., "01. 25 February 2025") 
 # Set to NULL to run the full batch process.
-target_date_override <- "25. 29 April 2026"
+target_date_override <- "15. 16 February 2026"
 
 # Folders to ignore during the batch processing loop
 exclude_list <- c("000. Projects",

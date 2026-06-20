@@ -39,7 +39,7 @@ csv_path <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc
 
 # --- RUN CONTROLS ---
 # Set to a specific folder name to run only that dataset, or set to NULL for full batch.
-target_date_override <- NULL
+target_date_override <- "15. 16 February 2026"
 
 # --- EXCLUDE LIST ---
 exclude_list <- c("01. 25 February 2025",
