@@ -34,11 +34,62 @@ library(mgcv)
 library(tidyverse)
 library(gratia)
 library(patchwork)
+library(sf)
 
+# =============================================================================
+# OUTPUT SETTINGS
+# =============================================================================
+
+OUTPUT_DIR <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/10. GAMM"
+
+if (!dir.exists(OUTPUT_DIR)) {
+  dir.create(OUTPUT_DIR, recursive = TRUE)
+}
+
+# =============================================================================
+# ANALYSIS SETTINGS
+# =============================================================================
+
+BASELINE_SPECIES <- "Grandis"
+BASELINE_SPACING <- "1x1m"
+
+INCLUDE_SPECIES <- c(
+  "Grandis",
+  "Grandis clone",
+  "Urophylla",
+  "Cloeziana",
+  "Cladocalyx",
+)
+
+cat("\n")
+cat("=====================================================\n")
+cat("GAMM ANALYSIS SETTINGS\n")
+cat("=====================================================\n")
+cat("Species included:\n")
+print(INCLUDE_SPECIES)
+cat("\nBaseline species:", BASELINE_SPECIES, "\n")
+cat("Baseline spacing:", BASELINE_SPACING, "\n")
+cat("=====================================================\n\n")
 
 # ── 1. Load & clean data ──────────────────────────────────────────────────────
-df_raw <- read_csv("C:/Users/jakev/Downloads/UAV_Master_Dataset_25-05-2026.csv",
-                   show_col_types = FALSE)
+# 1. Load one shapefile to serve as the master coordinate reference
+base_crowns <- st_read("E:/Remote Sensing Media/02. 01 September 2025/09. Crown Metrics/Crown_Metrics_01_September_2025.shp", quiet = TRUE) %>%
+  mutate(Tree = round(as.numeric(Tree), 2))
+
+# 2. Extract X and Y centroids 
+coords_df <- base_crowns %>%
+  st_centroid() %>%
+  mutate(
+    X = st_coordinates(.)[,1],
+    Y = st_coordinates(.)[,2]
+  ) %>%
+  st_drop_geometry() %>%
+  select(Compartment = Cmprtmn, Line, Plot, Tree, X, Y)
+
+# 3. Merge X and Y into your main dataset
+df_raw <- read_csv("C:/Users/jakev/Downloads/UAV_Master_Dataset_25-05-2026.csv", show_col_types = FALSE) %>%
+  mutate(Tree = round(as.numeric(Tree), 2)) %>%
+  left_join(coords_df, by = c("Compartment", "Line", "Plot", "Tree"))
 
 df_base <- df_raw |>
   mutate(
@@ -54,7 +105,7 @@ df_base <- df_raw |>
     Tree_ID   = factor(Tree_ID)
   ) |>
   filter(Death_Date == "Alive") |>
-  filter(Date >= as.Date("2025-09-01"))
+  filter(Date >= as.Date("2025-09-01")) |>
 
 # ── Height — Gaussian, raw scale ─────────────────────────────────────────────
 df_h <- df_base |>
@@ -75,6 +126,15 @@ df_r <- df_base |>
          !is.na(Calibrated_Height_m), Calibrated_Height_m > 0) |>
   mutate(CAH = log(Crown_Area_m2 / Calibrated_Height_m))  # model on log scale
 
+# Use Grandis as base reference
+df_h$Species <- relevel(df_h$Species, ref = BASELINE_SPECIES)
+df_c$Species <- relevel(df_c$Species, ref = BASELINE_SPECIES)
+df_r$Species <- relevel(df_r$Species, ref = BASELINE_SPECIES)
+
+df_h$Spacing_f <- relevel(df_h$Spacing_f, ref = BASELINE_SPACING)
+df_c$Spacing_f <- relevel(df_c$Spacing_f, ref = BASELINE_SPACING)
+df_r$Spacing_f <- relevel(df_r$Spacing_f, ref = BASELINE_SPACING)
+
 cat("── Data summary ──────────────────────────────────────────────────────\n")
 cat("Height dataset:     ", nrow(df_h), "obs |", n_distinct(df_h$Tree_ID), "trees\n")
 cat("Crown area dataset: ", nrow(df_c), "obs |", n_distinct(df_c$Tree_ID), "trees\n")
@@ -83,12 +143,23 @@ cat("Days range:         ", min(df_h$days), "to", max(df_h$days), "\n\n")
 
 
 # ── 2. Shared plot settings ───────────────────────────────────────────────────
+# Standardize colors across all potential plots (Matplotlib tab10 equivalent)
 species_colors <- c(
-  "Cladocalyx"    = "#336998",
-  "Grandis"       = "#97dde3",
-  "Cloeziana"     = "#ffffff",
-  "Urophylla"     = "#e3acff",
-  "Grandis clone" = "#ff7da0"
+  "Cladocalyx"    = "#1f77b4",  # Blue
+  "Cloeziana"     = "#ff7f0e",  # Orange
+  "Urophylla"     = "#9467bd",  # Purple
+  "Grandis"       = "#2ca02c",  # Green
+  "Grandis clone" = "#d62728",  # Red
+  "Mixed"         = "black"     # Black
+)
+
+species_display <- c(
+  "Cladocalyx"    = "Cladocalyx",
+  "Cloeziana"     = "Cloeziana",
+  "Grandis"       = "Grandis",
+  "Grandis clone" = "Grandis clone",
+  "Urophylla"     = "Urophylla",
+  "Mixed"         = "Mixed"
 )
 
 spacing_colors <- c(
@@ -99,10 +170,10 @@ spacing_colors <- c(
 )
 
 spacing_display <- c(
-  "1x1m" = "1x1 m (1 m2/tree)",
-  "2x2m" = "2x2 m (4 m2/tree)",
-  "3x3m" = "3x3 m (9 m2/tree)",
-  "5x5m" = "5x5 m (25 m2/tree)"
+  "1x1m" = "1m",
+  "2x2m" = "2m",
+  "3x3m" = "3m",
+  "5x5m" = "5m"
 )
 
 
@@ -118,6 +189,7 @@ fit_gamm_pair <- function(df, response_col) {
     as.formula(paste0(response_col, " ~
       s(days, k = 12, bs = 'cr') +
       s(days, by = Species,   k = 10, bs = 'tp') +
+      s(X, Y, bs = 'tp', k = 40) +    # <--- NEW SPATIAL SMOOTH
       Spacing_f + Culture +
       s(Plot_ID, bs = 're') +
       s(Tree_ID, bs = 're')")),
@@ -132,6 +204,7 @@ fit_gamm_pair <- function(df, response_col) {
     as.formula(paste0(response_col, " ~
       s(days, k = 12, bs = 'cr') +
       s(days, by = Spacing_f, k = 10, bs = 'tp') +
+      s(X, Y, bs = 'tp', k = 40) +    # <--- NEW SPATIAL SMOOTH
       Species + Culture +
       s(Plot_ID, bs = 're') +
       s(Tree_ID, bs = 're')")),
@@ -149,23 +222,39 @@ fit_gamm_pair <- function(df, response_col) {
 # backtransform = TRUE  → use for Crown and CA:H (fitted on log scale)
 # backtransform = FALSE → use for Height (fitted on raw scale)
 predict_traj <- function(model, newdata, backtransform = FALSE) {
-  preds   <- predict(model, newdata = newdata, se.fit = TRUE,
-                     type = "response",
-                     exclude = c("s(Plot_ID)", "s(Tree_ID)"))
+  
+  preds <- predict(
+    model,
+    newdata = newdata,
+    se.fit = TRUE,
+    type = "response",
+    exclude = c(
+      "s(Plot_ID)",
+      "s(Tree_ID)",
+      "s(X,Y)"
+    )
+  )
+  
   fit_raw <- as.numeric(preds$fit)
   se_raw  <- as.numeric(preds$se.fit)
   
   if (backtransform) {
-    # Delta method back-transformation:
-    # True mean on original scale = exp(log_fit + 0.5 * log_se²)
-    # SE on original scale        = exp(log_fit) * log_se
+    
     fit_out <- exp(fit_raw + 0.5 * se_raw^2)
     se_out  <- exp(fit_raw) * se_raw
+    
   } else {
+    
     fit_out <- fit_raw
     se_out  <- se_raw
+    
   }
-  newdata |> mutate(fit = fit_out, se = se_out)
+  
+  newdata |>
+    mutate(
+      fit = fit_out,
+      se  = se_out
+    )
 }
 
 
@@ -297,34 +386,65 @@ pairwise_at_day <- function(diff_df, target_day, response_label, factor_label) {
 
 # ── Prediction grid helpers ───────────────────────────────────────────────────
 make_full_grid <- function(days_seq, df_ref) {
-  expand_grid(days = days_seq,
-              Species   = levels(df_ref$Species),
-              Spacing_f = levels(df_ref$Spacing_f)) |>
-    mutate(Species   = factor(Species,   levels = levels(df_ref$Species)),
-           Spacing_f = factor(Spacing_f, levels = levels(df_ref$Spacing_f)),
-           Culture   = factor("Single",  levels = levels(df_ref$Culture)),
-           Plot_ID   = levels(df_ref$Plot_ID)[1],
-           Tree_ID   = levels(df_ref$Tree_ID)[1])
+  
+  x_ref <- mean(df_ref$X, na.rm = TRUE)
+  y_ref <- mean(df_ref$Y, na.rm = TRUE)
+  
+  expand_grid(
+    days = days_seq,
+    Species   = levels(df_ref$Species),
+    Spacing_f = levels(df_ref$Spacing_f)
+  ) |>
+    mutate(
+      Species   = factor(Species, levels = levels(df_ref$Species)),
+      Spacing_f = factor(Spacing_f, levels = levels(df_ref$Spacing_f)),
+      Culture   = factor("Single", levels = levels(df_ref$Culture)),
+      Plot_ID   = levels(df_ref$Plot_ID)[1],
+      Tree_ID   = levels(df_ref$Tree_ID)[1],
+      X = x_ref,
+      Y = y_ref
+    )
 }
 
 make_species_grid <- function(days_seq, df_ref) {
-  expand_grid(days = days_seq, Species = levels(df_ref$Species)) |>
-    mutate(Species   = factor(Species, levels = levels(df_ref$Species)),
-           Spacing_f = levels(df_ref$Spacing_f)[1],
-           Culture   = factor("Single", levels = levels(df_ref$Culture)),
-           Plot_ID   = levels(df_ref$Plot_ID)[1],
-           Tree_ID   = levels(df_ref$Tree_ID)[1])
+  
+  x_ref <- mean(df_ref$X, na.rm = TRUE)
+  y_ref <- mean(df_ref$Y, na.rm = TRUE)
+  
+  expand_grid(
+    days = days_seq,
+    Species = levels(df_ref$Species)
+  ) |>
+    mutate(
+      Species   = factor(Species, levels = levels(df_ref$Species)),
+      Spacing_f = levels(df_ref$Spacing_f)[1],
+      Culture   = factor("Single", levels = levels(df_ref$Culture)),
+      Plot_ID   = levels(df_ref$Plot_ID)[1],
+      Tree_ID   = levels(df_ref$Tree_ID)[1],
+      X = x_ref,
+      Y = y_ref
+    )
 }
 
 make_spacing_grid <- function(days_seq, df_ref) {
-  expand_grid(days = days_seq, Spacing_f = levels(df_ref$Spacing_f)) |>
-    mutate(Spacing_f = factor(Spacing_f, levels = levels(df_ref$Spacing_f)),
-           Species   = levels(df_ref$Species)[1],
-           Culture   = factor("Single", levels = levels(df_ref$Culture)),
-           Plot_ID   = levels(df_ref$Plot_ID)[1],
-           Tree_ID   = levels(df_ref$Tree_ID)[1])
+  
+  x_ref <- mean(df_ref$X, na.rm = TRUE)
+  y_ref <- mean(df_ref$Y, na.rm = TRUE)
+  
+  expand_grid(
+    days = days_seq,
+    Spacing_f = levels(df_ref$Spacing_f)
+  ) |>
+    mutate(
+      Spacing_f = factor(Spacing_f, levels = levels(df_ref$Spacing_f)),
+      Species   = levels(df_ref$Species)[1],
+      Culture   = factor("Single", levels = levels(df_ref$Culture)),
+      Plot_ID   = levels(df_ref$Plot_ID)[1],
+      Tree_ID   = levels(df_ref$Tree_ID)[1],
+      X = x_ref,
+      Y = y_ref
+    )
 }
-
 
 # =============================================================================
 # ── FIT MODELS ────────────────────────────────────────────────────────────────
@@ -357,10 +477,89 @@ print(summary(models_r$species))
 cat("\n── CA:H spacing model summary ───────────────────────────────────────\n")
 print(summary(models_r$spacing))
 
+# =============================================================================
+# MODEL DIAGNOSTICS
+# =============================================================================
+
+cat("\n")
+cat("=====================================================\n")
+cat("MODEL DIAGNOSTICS\n")
+cat("=====================================================\n")
+
+# -----------------------------------------------------------------------------
+# Helper: run gam.check() and save output
+# -----------------------------------------------------------------------------
+
+save_gam_check <- function(model, model_name, output_dir) {
+  
+  cat("\n-----------------------------------------------------\n")
+  cat(model_name, "\n")
+  cat("-----------------------------------------------------\n")
+  
+  txt_file <- file.path(
+    output_dir,
+    paste0(
+      gsub("[^A-Za-z0-9]", "_", model_name),
+      "_gamcheck.txt"
+    )
+  )
+  
+  capture.output(
+    gam.check(model),
+    file = txt_file
+  )
+  
+  cat("Saved:", basename(txt_file), "\n")
+  
+  invisible(txt_file)
+}
+
+# -----------------------------------------------------------------------------
+# Run and save GAM checks
+# -----------------------------------------------------------------------------
+
+save_gam_check(
+  models_h$species,
+  "Height Species",
+  OUTPUT_DIR
+)
+
+save_gam_check(
+  models_h$spacing,
+  "Height Spacing",
+  OUTPUT_DIR
+)
+
+save_gam_check(
+  models_c$species,
+  "Crown Area Species",
+  OUTPUT_DIR
+)
+
+save_gam_check(
+  models_c$spacing,
+  "Crown Area Spacing",
+  OUTPUT_DIR
+)
+
+save_gam_check(
+  models_r$species,
+  "CAH Ratio Species",
+  OUTPUT_DIR
+)
+
+save_gam_check(
+  models_r$spacing,
+  "CAH Ratio Spacing",
+  OUTPUT_DIR
+)
+
+cat("\n")
+cat("All GAM diagnostic reports saved.\n")
+cat("=====================================================\n")
 
 # =============================================================================
 # ── PREDICTION GRIDS ──────────────────────────────────────────────────────────
-# ▲▲▲ START HERE if all six models already fitted ▲▲▲
 # =============================================================================
 
 days_h <- seq(min(df_h$days), max(df_h$days), length.out = 300)
@@ -435,8 +634,22 @@ curve_plot <- function(curve_df, colour_var, colour_vals, colour_labels = NULL,
                        fill   = .data[[colour_var]])) +
     geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.15, colour = NA) +
     geom_line(aes(y = fit), linewidth = 0.9) +
-    scale_colour_manual(values = colour_vals, labels = colour_labels) +
-    scale_fill_manual(values   = colour_vals, labels = colour_labels) +
+    scale_colour_manual(
+      values = colour_vals,
+      labels = colour_labels,
+      drop = FALSE
+    ) +
+    
+    scale_fill_manual(
+      values = colour_vals,
+      labels = colour_labels,
+      drop = FALSE
+    ) +
+    
+    guides(
+      colour = guide_legend(nrow = 1),
+      fill = "none"
+    ) +
     scale_x_continuous(breaks = seq(0, 270, by = 60)) +
     scale_y_continuous(expand = expansion(mult = c(0.02, 0.05))) +
     labs(title = title, subtitle = subtitle,
@@ -454,21 +667,25 @@ p_h_sp_diff <- plot_diffs(sp_diffs_h,
                           title = "Species pairwise height differences",
                           subtitle = "Shaded = 95% CI  |  Red rug = significant period  |  Averaged over spacings",
                           y_label = "Difference in height (m)", fill_col = "steelblue", ncol = 3)
-ggsave("height_species_differences.pdf", p_h_sp_diff,
+ggsave(file.path(OUTPUT_DIR, "height_species_differences.png"), p_h_sp_diff,
        width = 14, height = 9, units = "in", dpi = 300)
 
 p_h_sc_diff <- plot_diffs(sc_diffs_h,
                           title = "Spacing pairwise height differences",
                           subtitle = "Shaded = 95% CI  |  Red rug = significant period  |  Averaged over species",
                           y_label = "Difference in height (m)", fill_col = "darkorange", ncol = 3)
-ggsave("height_spacing_differences.pdf", p_h_sc_diff,
+ggsave(file.path(OUTPUT_DIR, "height_spacing_differences.png"), p_h_sc_diff,
        width = 10, height = 8, units = "in", dpi = 300)
 
-p_h_sp_curves <- curve_plot(curve_h_sp, "Species", species_colors,
+p_h_sp_curves <- curve_plot(curve_h_sp,
+                            "Species",
+                            species_colors,
+                            colour_labels = species_display,
+                            legend_title = "Species",
                             title = "GAMM-fitted height growth trajectories by species",
                             subtitle = "Population mean, spacing controlled  |  Shaded = 95% CI",
                             y_label = "Calibrated height (m)")
-ggsave("height_curves_species.pdf", p_h_sp_curves,
+ggsave(file.path(OUTPUT_DIR, "height_curves_species.png"), p_h_sp_curves,
        width = 7, height = 4.5, units = "in", dpi = 300)
 
 p_h_sc_curves <- curve_plot(curve_h_sc, "Spacing_f", spacing_colors,
@@ -476,7 +693,7 @@ p_h_sc_curves <- curve_plot(curve_h_sc, "Spacing_f", spacing_colors,
                             title = "GAMM-fitted height growth trajectories by spacing",
                             subtitle = "Population mean, species controlled  |  Shaded = 95% CI",
                             y_label = "Calibrated height (m)", legend_title = "Spacing")
-ggsave("height_curves_spacing.pdf", p_h_sc_curves,
+ggsave(file.path(OUTPUT_DIR, "height_curves_spacing.png"), p_h_sc_curves,
        width = 7, height = 4.5, units = "in", dpi = 300)
 
 # ── CROWN AREA plots ──────────────────────────────────────────────────────────
@@ -484,21 +701,23 @@ p_c_sp_diff <- plot_diffs(sp_diffs_c,
                           title = "Species pairwise crown area differences",
                           subtitle = "Shaded = 95% CI  |  Red rug = significant period  |  Averaged over spacings",
                           y_label = "Difference in crown area (m2)", fill_col = "steelblue", ncol = 3)
-ggsave("crown_species_differences.pdf", p_c_sp_diff,
+ggsave(file.path(OUTPUT_DIR, "crown_species_differences.png"), p_c_sp_diff,
        width = 14, height = 9, units = "in", dpi = 300)
 
 p_c_sc_diff <- plot_diffs(sc_diffs_c,
                           title = "Spacing pairwise crown area differences",
                           subtitle = "Shaded = 95% CI  |  Red rug = significant period  |  Averaged over species",
                           y_label = "Difference in crown area (m2)", fill_col = "darkorange", ncol = 3)
-ggsave("crown_spacing_differences.pdf", p_c_sc_diff,
+ggsave(file.path(OUTPUT_DIR, "crown_spacing_differences.png"), p_c_sc_diff,
        width = 10, height = 8, units = "in", dpi = 300)
 
 p_c_sp_curves <- curve_plot(curve_c_sp, "Species", species_colors,
+                            colour_labels = species_display,
+                            legend_title = "Species",
                             title = "GAMM-fitted crown area growth trajectories by species",
                             subtitle = "Population mean, spacing controlled  |  Shaded = 95% CI",
                             y_label = "Crown area (m2)")
-ggsave("crown_curves_species.pdf", p_c_sp_curves,
+ggsave(file.path(OUTPUT_DIR, "crown_curves_species.png"), p_c_sp_curves,
        width = 7, height = 4.5, units = "in", dpi = 300)
 
 p_c_sc_curves <- curve_plot(curve_c_sc, "Spacing_f", spacing_colors,
@@ -506,7 +725,7 @@ p_c_sc_curves <- curve_plot(curve_c_sc, "Spacing_f", spacing_colors,
                             title = "GAMM-fitted crown area growth trajectories by spacing",
                             subtitle = "Population mean, species controlled  |  Shaded = 95% CI",
                             y_label = "Crown area (m2)", legend_title = "Spacing")
-ggsave("crown_curves_spacing.pdf", p_c_sc_curves,
+ggsave(file.path(OUTPUT_DIR, "crown_curves_spacing.png"), p_c_sc_curves,
        width = 7, height = 4.5, units = "in", dpi = 300)
 
 # ── CA:H RATIO plots ──────────────────────────────────────────────────────────
@@ -514,21 +733,23 @@ p_r_sp_diff <- plot_diffs(sp_diffs_r,
                           title = "Species pairwise crown:height ratio differences",
                           subtitle = "Shaded = 95% CI  |  Red rug = significant period  |  Averaged over spacings",
                           y_label = "Difference in CA:H ratio (m2 m-1)", fill_col = "#6a3d9a", ncol = 3)
-ggsave("cah_species_differences.pdf", p_r_sp_diff,
+ggsave(file.path(OUTPUT_DIR, "cah_species_differences.png"), p_r_sp_diff,
        width = 14, height = 9, units = "in", dpi = 300)
 
 p_r_sc_diff <- plot_diffs(sc_diffs_r,
                           title = "Spacing pairwise crown:height ratio differences",
                           subtitle = "Shaded = 95% CI  |  Red rug = significant period  |  Averaged over species",
                           y_label = "Difference in CA:H ratio (m2 m-1)", fill_col = "#e31a1c", ncol = 3)
-ggsave("cah_spacing_differences.pdf", p_r_sc_diff,
+ggsave(file.path(OUTPUT_DIR, "cah_spacing_differences.png"), p_r_sc_diff,
        width = 10, height = 8, units = "in", dpi = 300)
 
 p_r_sp_curves <- curve_plot(curve_r_sp, "Species", species_colors,
+                            colour_labels = species_display,
+                            legend_title = "Species",
                             title = "GAMM-fitted crown:height ratio trajectories by species",
                             subtitle = "Population mean, spacing controlled  |  Shaded = 95% CI",
                             y_label = "CA:H ratio (m2 m-1)")
-ggsave("cah_curves_species.pdf", p_r_sp_curves,
+ggsave(file.path(OUTPUT_DIR, "cah_curves_species.png"), p_r_sp_curves,
        width = 7, height = 4.5, units = "in", dpi = 300)
 
 p_r_sc_curves <- curve_plot(curve_r_sc, "Spacing_f", spacing_colors,
@@ -536,7 +757,7 @@ p_r_sc_curves <- curve_plot(curve_r_sc, "Spacing_f", spacing_colors,
                             title = "GAMM-fitted crown:height ratio trajectories by spacing",
                             subtitle = "Population mean, species controlled  |  Shaded = 95% CI",
                             y_label = "CA:H ratio (m2 m-1)", legend_title = "Spacing")
-ggsave("cah_curves_spacing.pdf", p_r_sc_curves,
+ggsave(file.path(OUTPUT_DIR, "cah_curves_spacing.png"), p_r_sc_curves,
        width = 7, height = 4.5, units = "in", dpi = 300)
 
 # ── Combined 3-panel figures ──────────────────────────────────────────────────
@@ -546,7 +767,7 @@ p_combined_species <- (p_h_sp_curves | p_c_sp_curves | p_r_sp_curves) +
     subtitle = "Left: Height  |  Centre: Crown area  |  Right: CA:H ratio  |  Spacing controlled",
     theme    = theme(plot.title    = element_text(size = 11, face = "bold"),
                      plot.subtitle = element_text(size = 9, colour = "grey40")))
-ggsave("combined_curves_species.pdf", p_combined_species,
+ggsave(file.path(OUTPUT_DIR, "combined_curves_species.png"), p_combined_species,
        width = 21, height = 4.5, units = "in", dpi = 300)
 
 p_combined_spacing <- (p_h_sc_curves | p_c_sc_curves | p_r_sc_curves) +
@@ -555,7 +776,7 @@ p_combined_spacing <- (p_h_sc_curves | p_c_sc_curves | p_r_sc_curves) +
     subtitle = "Left: Height  |  Centre: Crown area  |  Right: CA:H ratio  |  Species controlled",
     theme    = theme(plot.title    = element_text(size = 11, face = "bold"),
                      plot.subtitle = element_text(size = 9, colour = "grey40")))
-ggsave("combined_curves_spacing.pdf", p_combined_spacing,
+ggsave(file.path(OUTPUT_DIR, "combined_curves_spacing.png"), p_combined_spacing,
        width = 21, height = 4.5, units = "in", dpi = 300)
 
 
@@ -584,7 +805,13 @@ cat("║  TABLE 1: GAMM Smooth Term Significance                             ║
 cat("║  EDF > 1 = non-linear  |  p < 0.05 = significant smooth            ║\n")
 cat("╚══════════════════════════════════════════════════════════════════════╝\n")
 print(as_tibble(tbl1), n = Inf)
-write_csv(tbl1, "stats_table1_smooth_significance.csv")
+write_csv(
+  tbl1,
+  file.path(
+    OUTPUT_DIR,
+    "stats_table1_smooth_significance.csv"
+  )
+)
 
 # TABLE 2: Marginal means at key timepoints
 # Height — raw scale (no back-transform)
@@ -634,7 +861,7 @@ for (item in tbl2_list) {
 
 write_csv(bind_rows(tbl2_h_sp, tbl2_h_sc, tbl2_c_sp,
                     tbl2_c_sc, tbl2_r_sp, tbl2_r_sc),
-          "stats_table2_marginal_means.csv")
+          file.path(OUTPUT_DIR,"stats_table2_marginal_means.csv"))
 
 # TABLE 3: Pairwise differences at day 266
 tbl3 <- bind_rows(
@@ -651,7 +878,7 @@ cat("║  TABLE 3: All Pairwise Differences at Day 266 (25 May 2026)        ║\
 cat("║  Difference = Group1 minus Group2 | Sig = CI excludes zero         ║\n")
 cat("╚══════════════════════════════════════════════════════════════════════╝\n")
 print(tbl3, n = Inf)
-write_csv(tbl3, "stats_table3_pairwise_differences.csv")
+write_csv(tbl3, file.path(OUTPUT_DIR,"stats_table3_pairwise_differences.csv"))
 
 cat("\n── Significant pairs at Day 266 ─────────────────────────────────────\n")
 sig_only <- tbl3 |> filter(Sig == "YES ***")
@@ -681,12 +908,12 @@ for (nm in names(model_list)) {
 }
 
 diag_files <- list(
-  list(models_h$species, "diag_height_species.pdf"),
-  list(models_h$spacing, "diag_height_spacing.pdf"),
-  list(models_c$species, "diag_crown_species.pdf"),
-  list(models_c$spacing, "diag_crown_spacing.pdf"),
-  list(models_r$species, "diag_cah_species.pdf"),
-  list(models_r$spacing, "diag_cah_spacing.pdf")
+  list(models_h$species, file.path(OUTPUT_DIR, "diag_height_species.png")),
+  list(models_h$spacing, file.path(OUTPUT_DIR, "diag_height_spacing.png")),
+  list(models_c$species, file.path(OUTPUT_DIR, "diag_crown_species.png")),
+  list(models_c$spacing, file.path(OUTPUT_DIR, "diag_crown_spacing.png")),
+  list(models_r$species, file.path(OUTPUT_DIR, "diag_cah_species.png")),
+  list(models_r$spacing, file.path(OUTPUT_DIR, "diag_cah_spacing.png"))
 )
 for (item in diag_files) {
   ggsave(item[[2]], appraise(item[[1]]),
