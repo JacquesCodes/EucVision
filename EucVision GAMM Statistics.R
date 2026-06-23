@@ -36,6 +36,9 @@ library(gratia)
 library(patchwork)
 library(sf)
 
+# Add Calibri font
+windowsFonts(Calibri = windowsFont("Calibri"))
+
 # =============================================================================
 # OUTPUT SETTINGS
 # =============================================================================
@@ -58,7 +61,7 @@ INCLUDE_SPECIES <- c(
   "Grandis clone",
   "Urophylla",
   "Cloeziana",
-  "Cladocalyx",
+  "Cladocalyx"
 )
 
 cat("\n")
@@ -106,6 +109,7 @@ df_base <- df_raw |>
   ) |>
   filter(Death_Date == "Alive") |>
   filter(Date >= as.Date("2025-09-01")) |>
+  filter(Culture == "Single")
 
 # ── Height — Gaussian, raw scale ─────────────────────────────────────────────
 df_h <- df_base |>
@@ -190,7 +194,7 @@ fit_gamm_pair <- function(df, response_col) {
       s(days, k = 12, bs = 'cr') +
       s(days, by = Species,   k = 10, bs = 'tp') +
       s(X, Y, bs = 'tp', k = 40) +    # <--- NEW SPATIAL SMOOTH
-      Spacing_f + Culture +
+      Spacing_f +
       s(Plot_ID, bs = 're') +
       s(Tree_ID, bs = 're')")),
     data     = df,
@@ -205,7 +209,7 @@ fit_gamm_pair <- function(df, response_col) {
       s(days, k = 12, bs = 'cr') +
       s(days, by = Spacing_f, k = 10, bs = 'tp') +
       s(X, Y, bs = 'tp', k = 40) +    # <--- NEW SPATIAL SMOOTH
-      Species + Culture +
+      Species +
       s(Plot_ID, bs = 're') +
       s(Tree_ID, bs = 're')")),
     data     = df,
@@ -287,6 +291,35 @@ pairwise_diffs <- function(pred_grid, group_var, average_over) {
   })
 }
 
+# ── Custom Thesis Theme ───────────────────────────────────────────────────────
+theme_thesis <- function() {
+  theme_classic(base_size = 9, base_family = "Calibri") +
+    theme(
+      # Text and Titles
+      plot.title       = element_text(size = 10, face = "bold"),
+      plot.subtitle    = element_text(size = 9, colour = "grey40"),
+      axis.title       = element_text(size = 9),
+      axis.text        = element_text(size = 8),
+      
+      # Spines and Ticks
+      axis.line        = element_line(colour = "black", linewidth = 1.2),
+      axis.ticks       = element_line(colour = "black", linewidth = 1),
+      axis.ticks.length = unit(4, "pt"),
+      
+      # Gridlines (y-axis only, dashed, grey, transparent)
+      panel.grid.major.y = element_line(colour = alpha("#b0b0b0", 0.25), linewidth = 0.5, linetype = "solid"),
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor   = element_blank(),
+      
+      # Legend Settings (Upper left, framed, slightly transparent white background)
+      legend.position      = c(0.02, 0.98), 
+      legend.justification = c(0, 1),
+      legend.background    = element_rect(fill = alpha("white", 0.95), colour = "lightgray", linewidth = 0.5),
+      legend.title         = element_text(size = 10, face = "bold"),
+      legend.text          = element_text(size = 8),
+      legend.key.size      = unit(0.4, "cm")
+    )
+}
 
 # ── Plot pairwise differences ─────────────────────────────────────────────────
 plot_diffs <- function(diff_df, title, subtitle, y_label,
@@ -301,11 +334,7 @@ plot_diffs <- function(diff_df, title, subtitle, y_label,
     facet_wrap(~ comparison, ncol = ncol) +
     labs(title = title, subtitle = subtitle,
          x = "Days from 1 September 2025", y = y_label) +
-    theme_classic(base_size = 9) +
-    theme(strip.background = element_blank(),
-          strip.text       = element_text(size = 7, face = "bold"),
-          plot.title       = element_text(size = 9, face = "bold"),
-          plot.subtitle    = element_text(size = 7, colour = "grey40"))
+    theme_thesis() # <-- Just call the function here!
 }
 
 
@@ -313,7 +342,10 @@ plot_diffs <- function(diff_df, title, subtitle, y_label,
 smooth_sig_table <- function(model, response_label) {
   s      <- summary(model)
   sp_tbl <- as.data.frame(s$s.table)
-  sp_tbl <- sp_tbl[grepl("^s\\(days\\):", rownames(sp_tbl)), ]
+  sp_tbl <- sp_tbl[
+  grepl("^s\\(days\\):", rownames(sp_tbl)) |
+  rownames(sp_tbl) == "s(X,Y)",
+  ]
   sp_tbl$Term     <- rownames(sp_tbl)
   sp_tbl$Response <- response_label
   sp_tbl$Sig      <- ifelse(sp_tbl[["p-value"]] < 0.001, "***",
@@ -330,18 +362,29 @@ marginal_means <- function(model, group_var, group_levels,
                            fixed_var, fixed_level,
                            df_ref, key_days, key_labels, response_label,
                            backtransform = FALSE) {
+  
+  # 1. Define reference X and Y coordinates
+  x_ref <- mean(df_ref$X, na.rm = TRUE)
+  y_ref <- mean(df_ref$Y, na.rm = TRUE)
+  
   pred_base <- tibble(
     !!group_var := factor(group_levels, levels = levels(df_ref[[group_var]])),
     !!fixed_var := factor(fixed_level,  levels = levels(df_ref[[fixed_var]])),
     Culture = factor("Single", levels = levels(df_ref$Culture)),
     Plot_ID = levels(df_ref$Plot_ID)[1],
-    Tree_ID = levels(df_ref$Tree_ID)[1]
+    Tree_ID = levels(df_ref$Tree_ID)[1],
+    X = x_ref,  # <--- Added
+    Y = y_ref   # <--- Added
   )
+  
   map2_dfr(key_days, key_labels, function(d, lbl) {
     nd      <- pred_base |> mutate(days = d)
+    
+    # 2. Add "s(X,Y)" to the exclude list
     preds   <- predict(model, newdata = nd, se.fit = TRUE,
                        type = "response",
-                       exclude = c("s(Plot_ID)", "s(Tree_ID)"))
+                       exclude = c("s(Plot_ID)", "s(Tree_ID)", "s(X,Y)")) 
+    
     fit_raw <- as.numeric(preds$fit)
     se_raw  <- as.numeric(preds$se.fit)
     
@@ -624,11 +667,73 @@ curve_r_sc <- predict_traj(models_r$spacing, make_spacing_grid(days_r, df_r),
 # ── PLOTS ─────────────────────────────────────────────────────────────────────
 # =============================================================================
 
+# =============================================================================
+# ── FIGURE CAPTION REFERENCE (Former Titles & Subtitles) ──────────────────────
+# Use these to draft your Word document figure captions.
+#
+# ── DIFFERENCE PLOTS ──────────────────────────────────────────────────────────
+# Species Pairwise Differences
+#   Title:    Species pairwise [height / crown area / crown:height ratio] differences
+#   Subtitle: Shaded = 95% CI  |  Red rug = significant period  |  Averaged over spacings
+#
+# Spacing Pairwise Differences
+#   Title:    Spacing pairwise [height / crown area / crown:height ratio] differences
+#   Subtitle: Shaded = 95% CI  |  Red rug = significant period  |  Averaged over species
+#
+# ── SINGLE CURVE PLOTS ────────────────────────────────────────────────────────
+# Species Trajectories
+#   Title:    GAMM-fitted [height / crown area / crown:height ratio] growth trajectories by species
+#   Subtitle: Population mean, spacing controlled  |  Shaded = 95% CI
+#
+# Spacing Trajectories
+#   Title:    GAMM-fitted [height / crown area / crown:height ratio] growth trajectories by spacing
+#   Subtitle: Population mean, species controlled  |  Shaded = 95% CI
+#
+# ── COMBINED 3x2 GRID ─────────────────────────────────────────────────────────
+#   Title:    GAMM-Fitted Growth Trajectories
+#   Subtitle: Left column: Species-controlled  |  Right column: Spacing-controlled
+# =============================================================================
+
 cat("\nGenerating plots...\n")
 
+# ── Custom Thesis Theme ───────────────────────────────────────────────────────
+theme_thesis <- function() {
+  theme_classic(base_size = 9, base_family = "Calibri") +
+    theme(
+      # Text and Titles
+      plot.title       = element_text(size = 10, face = "bold"),
+      plot.subtitle    = element_text(size = 9, colour = "grey40"),
+      axis.title       = element_text(size = 9),
+      axis.text        = element_text(size = 8),
+      
+      # Spines and Ticks
+      axis.line        = element_line(colour = "black", linewidth = 1.2),
+      axis.ticks       = element_line(colour = "black", linewidth = 1),
+      axis.ticks.length = unit(4, "pt"),
+      
+      # Gridlines (y-axis only, dashed, grey, transparent)
+      panel.grid.major.y = element_line(colour = alpha("#b0b0b0", 0.25), linewidth = 0.5, linetype = "solid"),
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor   = element_blank(),
+      
+      # Legend Settings (Moved to top left, border RESTORED)
+      legend.position      = "top", 
+      legend.justification = "left",
+      legend.background    = element_rect(fill = "white", colour = "lightgray", linewidth = 0.5), # <-- Border is back!
+      legend.title         = element_text(size = 10, face = "bold"),
+      legend.text          = element_text(size = 8),
+      legend.key.size      = unit(0.4, "cm"),
+      legend.margin        = margin(t = 2, r = 5, b = 2, l = 5, unit = "pt"), # Adds a bit of breathing room inside the box
+      
+      # Trim outer margins to save vertical space
+      plot.margin = margin(t = 2, r = 5, b = 2, l = 2, unit = "pt")
+    )
+}
+
 # ── Shared curve plot builder ─────────────────────────────────────────────────
+# Note: title and subtitle arguments have been removed to save vertical space
 curve_plot <- function(curve_df, colour_var, colour_vals, colour_labels = NULL,
-                       title, subtitle, y_label, legend_title = NULL) {
+                       y_label, legend_title = NULL) {
   ggplot(curve_df, aes(x = days,
                        colour = .data[[colour_var]],
                        fill   = .data[[colour_var]])) +
@@ -646,139 +751,154 @@ curve_plot <- function(curve_df, colour_var, colour_vals, colour_labels = NULL,
       drop = FALSE
     ) +
     
+    # Keep 2-row legend so it doesn't stretch too wide across the top
     guides(
-      colour = guide_legend(nrow = 1),
+      colour = guide_legend(nrow = 2), 
       fill = "none"
     ) +
     scale_x_continuous(breaks = seq(0, 270, by = 60)) +
+    
+    # Padding returned to standard 5% since the legend is now outside
     scale_y_continuous(expand = expansion(mult = c(0.02, 0.05))) +
-    labs(title = title, subtitle = subtitle,
-         x = "Days from 1 September 2025", y = y_label,
+    
+    labs(x = "Days from 1 September 2025", y = y_label,
          colour = legend_title, fill = legend_title) +
-    theme_classic(base_size = 9) +
-    theme(legend.position  = "bottom",
-          legend.key.size  = unit(0.4, "cm"),
-          plot.title       = element_text(size = 10, face = "bold"),
-          plot.subtitle    = element_text(size = 8, colour = "grey40"))
+    theme_thesis()
+}
+
+# ── Plot pairwise differences ─────────────────────────────────────────────────
+# Note: title and subtitle arguments have been removed
+plot_diffs <- function(diff_df, y_label, fill_col = "steelblue", ncol = 3) {
+  ggplot(diff_df, aes(x = days, y = diff)) +
+    geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.2, fill = fill_col) +
+    geom_line(colour = fill_col, linewidth = 0.8) +
+    geom_hline(yintercept = 0, linetype = "dashed",
+               colour = "grey40", linewidth = 0.5) +
+    geom_rug(data = diff_df[diff_df$sig, ], sides = "b",
+             colour = "red", alpha = 0.5) +
+    facet_wrap(~ comparison, ncol = ncol) +
+    labs(x = "Days from 1 September 2025", y = y_label) +
+    theme_thesis() 
 }
 
 # ── HEIGHT plots ──────────────────────────────────────────────────────────────
 p_h_sp_diff <- plot_diffs(sp_diffs_h,
-                          title = "Species pairwise height differences",
-                          subtitle = "Shaded = 95% CI  |  Red rug = significant period  |  Averaged over spacings",
-                          y_label = "Difference in height (m)", fill_col = "steelblue", ncol = 3)
+                          y_label = "Difference in height (m)", fill_col = "steelblue", ncol = 3) 
 ggsave(file.path(OUTPUT_DIR, "height_species_differences.png"), p_h_sp_diff,
-       width = 14, height = 9, units = "in", dpi = 300)
+       width = 6.30, height = 5.5, units = "in", dpi = 300)
 
 p_h_sc_diff <- plot_diffs(sc_diffs_h,
-                          title = "Spacing pairwise height differences",
-                          subtitle = "Shaded = 95% CI  |  Red rug = significant period  |  Averaged over species",
-                          y_label = "Difference in height (m)", fill_col = "darkorange", ncol = 3)
+                          y_label = "Difference in height (m)", fill_col = "darkorange", ncol = 3) 
 ggsave(file.path(OUTPUT_DIR, "height_spacing_differences.png"), p_h_sc_diff,
-       width = 10, height = 8, units = "in", dpi = 300)
+       width = 6.30, height = 3.0, units = "in", dpi = 300)
 
-p_h_sp_curves <- curve_plot(curve_h_sp,
-                            "Species",
-                            species_colors,
+p_h_sp_curves <- curve_plot(curve_h_sp, "Species", species_colors,
                             colour_labels = species_display,
                             legend_title = "Species",
-                            title = "GAMM-fitted height growth trajectories by species",
-                            subtitle = "Population mean, spacing controlled  |  Shaded = 95% CI",
                             y_label = "Calibrated height (m)")
 ggsave(file.path(OUTPUT_DIR, "height_curves_species.png"), p_h_sp_curves,
-       width = 7, height = 4.5, units = "in", dpi = 300)
+       width = 6.30, height = 3.2, units = "in", dpi = 300)
 
 p_h_sc_curves <- curve_plot(curve_h_sc, "Spacing_f", spacing_colors,
                             colour_labels = spacing_display,
-                            title = "GAMM-fitted height growth trajectories by spacing",
-                            subtitle = "Population mean, species controlled  |  Shaded = 95% CI",
-                            y_label = "Calibrated height (m)", legend_title = "Spacing")
+                            legend_title = "Spacing",
+                            y_label = "Calibrated height (m)")
 ggsave(file.path(OUTPUT_DIR, "height_curves_spacing.png"), p_h_sc_curves,
-       width = 7, height = 4.5, units = "in", dpi = 300)
+       width = 6.30, height = 3.2, units = "in", dpi = 300)
 
 # ── CROWN AREA plots ──────────────────────────────────────────────────────────
 p_c_sp_diff <- plot_diffs(sp_diffs_c,
-                          title = "Species pairwise crown area differences",
-                          subtitle = "Shaded = 95% CI  |  Red rug = significant period  |  Averaged over spacings",
-                          y_label = "Difference in crown area (m2)", fill_col = "steelblue", ncol = 3)
+                          y_label = "Difference in crown area (m2)", fill_col = "#1b9e77", ncol = 3) 
 ggsave(file.path(OUTPUT_DIR, "crown_species_differences.png"), p_c_sp_diff,
-       width = 14, height = 9, units = "in", dpi = 300)
+       width = 6.30, height = 5.5, units = "in", dpi = 300)
 
 p_c_sc_diff <- plot_diffs(sc_diffs_c,
-                          title = "Spacing pairwise crown area differences",
-                          subtitle = "Shaded = 95% CI  |  Red rug = significant period  |  Averaged over species",
-                          y_label = "Difference in crown area (m2)", fill_col = "darkorange", ncol = 3)
+                          y_label = "Difference in crown area (m2)", fill_col = "#d95f02", ncol = 3) 
 ggsave(file.path(OUTPUT_DIR, "crown_spacing_differences.png"), p_c_sc_diff,
-       width = 10, height = 8, units = "in", dpi = 300)
+       width = 6.30, height = 3.0, units = "in", dpi = 300)
 
 p_c_sp_curves <- curve_plot(curve_c_sp, "Species", species_colors,
                             colour_labels = species_display,
                             legend_title = "Species",
-                            title = "GAMM-fitted crown area growth trajectories by species",
-                            subtitle = "Population mean, spacing controlled  |  Shaded = 95% CI",
                             y_label = "Crown area (m2)")
 ggsave(file.path(OUTPUT_DIR, "crown_curves_species.png"), p_c_sp_curves,
-       width = 7, height = 4.5, units = "in", dpi = 300)
+       width = 6.30, height = 3.2, units = "in", dpi = 300)
 
 p_c_sc_curves <- curve_plot(curve_c_sc, "Spacing_f", spacing_colors,
                             colour_labels = spacing_display,
-                            title = "GAMM-fitted crown area growth trajectories by spacing",
-                            subtitle = "Population mean, species controlled  |  Shaded = 95% CI",
-                            y_label = "Crown area (m2)", legend_title = "Spacing")
+                            legend_title = "Spacing",
+                            y_label = "Crown area (m2)")
 ggsave(file.path(OUTPUT_DIR, "crown_curves_spacing.png"), p_c_sc_curves,
-       width = 7, height = 4.5, units = "in", dpi = 300)
+       width = 6.30, height = 3.2, units = "in", dpi = 300)
 
 # ── CA:H RATIO plots ──────────────────────────────────────────────────────────
 p_r_sp_diff <- plot_diffs(sp_diffs_r,
-                          title = "Species pairwise crown:height ratio differences",
-                          subtitle = "Shaded = 95% CI  |  Red rug = significant period  |  Averaged over spacings",
-                          y_label = "Difference in CA:H ratio (m2 m-1)", fill_col = "#6a3d9a", ncol = 3)
+                          y_label = "Difference in CA:H ratio (m2 m-1)", fill_col = "#6a3d9a", ncol = 3) 
 ggsave(file.path(OUTPUT_DIR, "cah_species_differences.png"), p_r_sp_diff,
-       width = 14, height = 9, units = "in", dpi = 300)
+       width = 6.30, height = 5.5, units = "in", dpi = 300)
 
 p_r_sc_diff <- plot_diffs(sc_diffs_r,
-                          title = "Spacing pairwise crown:height ratio differences",
-                          subtitle = "Shaded = 95% CI  |  Red rug = significant period  |  Averaged over species",
-                          y_label = "Difference in CA:H ratio (m2 m-1)", fill_col = "#e31a1c", ncol = 3)
+                          y_label = "Difference in CA:H ratio (m2 m-1)", fill_col = "#e31a1c", ncol = 3) 
 ggsave(file.path(OUTPUT_DIR, "cah_spacing_differences.png"), p_r_sc_diff,
-       width = 10, height = 8, units = "in", dpi = 300)
+       width = 6.30, height = 3.0, units = "in", dpi = 300)
 
 p_r_sp_curves <- curve_plot(curve_r_sp, "Species", species_colors,
                             colour_labels = species_display,
                             legend_title = "Species",
-                            title = "GAMM-fitted crown:height ratio trajectories by species",
-                            subtitle = "Population mean, spacing controlled  |  Shaded = 95% CI",
                             y_label = "CA:H ratio (m2 m-1)")
 ggsave(file.path(OUTPUT_DIR, "cah_curves_species.png"), p_r_sp_curves,
-       width = 7, height = 4.5, units = "in", dpi = 300)
+       width = 6.30, height = 3.2, units = "in", dpi = 300)
 
 p_r_sc_curves <- curve_plot(curve_r_sc, "Spacing_f", spacing_colors,
                             colour_labels = spacing_display,
-                            title = "GAMM-fitted crown:height ratio trajectories by spacing",
-                            subtitle = "Population mean, species controlled  |  Shaded = 95% CI",
-                            y_label = "CA:H ratio (m2 m-1)", legend_title = "Spacing")
+                            legend_title = "Spacing",
+                            y_label = "CA:H ratio (m2 m-1)")
 ggsave(file.path(OUTPUT_DIR, "cah_curves_spacing.png"), p_r_sc_curves,
-       width = 7, height = 4.5, units = "in", dpi = 300)
+       width = 6.30, height = 3.2, units = "in", dpi = 300)
 
-# ── Combined 3-panel figures ──────────────────────────────────────────────────
-p_combined_species <- (p_h_sp_curves | p_c_sp_curves | p_r_sp_curves) +
-  plot_annotation(
-    title    = "GAMM-fitted growth trajectories by species",
-    subtitle = "Left: Height  |  Centre: Crown area  |  Right: CA:H ratio  |  Spacing controlled",
-    theme    = theme(plot.title    = element_text(size = 11, face = "bold"),
-                     plot.subtitle = element_text(size = 9, colour = "grey40")))
-ggsave(file.path(OUTPUT_DIR, "combined_curves_species.png"), p_combined_species,
-       width = 21, height = 4.5, units = "in", dpi = 300)
+# ── Combined 3x2 Figure (Max Width) ───────────────────────────────────────────
 
-p_combined_spacing <- (p_h_sc_curves | p_c_sc_curves | p_r_sc_curves) +
-  plot_annotation(
-    title    = "GAMM-fitted growth trajectories by spacing",
-    subtitle = "Left: Height  |  Centre: Crown area  |  Right: CA:H ratio  |  Species controlled",
-    theme    = theme(plot.title    = element_text(size = 11, face = "bold"),
-                     plot.subtitle = element_text(size = 9, colour = "grey40")))
-ggsave(file.path(OUTPUT_DIR, "combined_curves_spacing.png"), p_combined_spacing,
-       width = 21, height = 4.5, units = "in", dpi = 300)
+cat("\nAssembling 3x2 combined grid (independent Y-axes)...\n")
 
+# 1. Helper function to strip X-axes on inner plots
+clean_panel <- function(p, keep_legend = FALSE, keep_x = FALSE, keep_y = TRUE) {
+  p <- p + theme(plot.margin = margin(t = 5, r = 5, b = 5, l = 5)) 
+  
+  if (!keep_legend) p <- p + theme(legend.position = "none")
+  
+  if (!keep_x) {
+    p <- p + theme(axis.title.x = element_blank(), 
+                   axis.text.x = element_blank(), 
+                   axis.ticks.x = element_blank())
+  }
+  
+  if (!keep_y) {
+    p <- p + theme(axis.title.y = element_blank(), 
+                   axis.text.y = element_blank(), 
+                   axis.ticks.y = element_blank())
+  }
+  
+  return(p)
+}
+
+# 2. Apply cleaning to all 6 panels
+h_sp_3x2 <- clean_panel(p_h_sp_curves, keep_legend = TRUE, keep_x = FALSE, keep_y = TRUE)
+h_sc_3x2 <- clean_panel(p_h_sc_curves, keep_legend = TRUE, keep_x = FALSE, keep_y = TRUE)
+
+c_sp_3x2 <- clean_panel(p_c_sp_curves, keep_legend = FALSE, keep_x = FALSE, keep_y = TRUE)
+c_sc_3x2 <- clean_panel(p_c_sc_curves, keep_legend = FALSE, keep_x = FALSE, keep_y = TRUE)
+
+r_sp_3x2 <- clean_panel(p_r_sp_curves, keep_legend = FALSE, keep_x = TRUE,  keep_y = TRUE)
+r_sc_3x2 <- clean_panel(p_r_sc_curves, keep_legend = FALSE, keep_x = TRUE,  keep_y = TRUE)
+
+# 3. Assemble the 3x2 grid with patchwork (Removed plot_annotation titles)
+p_combined_3x2 <- (h_sp_3x2 | h_sc_3x2) / 
+  (c_sp_3x2 | c_sc_3x2) / 
+  (r_sp_3x2 | r_sc_3x2)
+
+# Height compressed to 6.5 inches
+ggsave(file.path(OUTPUT_DIR, "combined_3x2_curves.png"), p_combined_3x2,
+       width = 6.30, height = 6.5, units = "in", dpi = 300)
 
 # =============================================================================
 # ── STATISTICS SUMMARY TABLES ─────────────────────────────────────────────────
@@ -908,16 +1028,24 @@ for (nm in names(model_list)) {
 }
 
 diag_files <- list(
-  list(models_h$species, file.path(OUTPUT_DIR, "diag_height_species.png")),
-  list(models_h$spacing, file.path(OUTPUT_DIR, "diag_height_spacing.png")),
-  list(models_c$species, file.path(OUTPUT_DIR, "diag_crown_species.png")),
-  list(models_c$spacing, file.path(OUTPUT_DIR, "diag_crown_spacing.png")),
-  list(models_r$species, file.path(OUTPUT_DIR, "diag_cah_species.png")),
-  list(models_r$spacing, file.path(OUTPUT_DIR, "diag_cah_spacing.png"))
+  list(models_h$species, file.path(OUTPUT_DIR, "diag_height_species.png"), "steelblue"),
+  list(models_h$spacing, file.path(OUTPUT_DIR, "diag_height_spacing.png"), "darkorange"),
+  list(models_c$species, file.path(OUTPUT_DIR, "diag_crown_species.png"), "#1b9e77"),
+  list(models_c$spacing, file.path(OUTPUT_DIR, "diag_crown_spacing.png"), "#d95f02"),
+  list(models_r$species, file.path(OUTPUT_DIR, "diag_cah_species.png"), "#6a3d9a"),
+  list(models_r$spacing, file.path(OUTPUT_DIR, "diag_cah_spacing.png"), "#e31a1c")
 )
+
 for (item in diag_files) {
-  ggsave(item[[2]], appraise(item[[1]]),
-         width = 10, height = 8, units = "in", dpi = 300)
+  p_diag <- appraise(item[[1]], 
+                     point_col = item[[3]], 
+                     point_alpha = 0.3, 
+                     line_col = "black") & 
+    theme_thesis()
+  
+  # Perfect 4.5 x 4.5 squares to be centered in Word
+  ggsave(item[[2]], p_diag,
+         width = 4.5, height = 4.5, units = "in", dpi = 300)
 }
 
 
@@ -927,16 +1055,16 @@ cat("    stats_table1_smooth_significance.csv\n")
 cat("    stats_table2_marginal_means.csv\n")
 cat("    stats_table3_pairwise_differences.csv\n")
 cat("  HEIGHT\n")
-cat("    height_curves_species/spacing.pdf\n")
-cat("    height_species/spacing_differences.pdf\n")
+cat("    height_curves_species/spacing.png\n")
+cat("    height_species/spacing_differences.png\n")
 cat("  CROWN AREA  (back-transformed from log scale to m2)\n")
-cat("    crown_curves_species/spacing.pdf\n")
-cat("    crown_species/spacing_differences.pdf\n")
+cat("    crown_curves_species/spacing.png\n")
+cat("    crown_species/spacing_differences.png\n")
 cat("  CA:H RATIO  (back-transformed from log scale to m2 m-1)\n")
-cat("    cah_curves_species/spacing.pdf\n")
-cat("    cah_species/spacing_differences.pdf\n")
-cat("  COMBINED (3-panel)\n")
-cat("    combined_curves_species.pdf  |  combined_curves_spacing.pdf\n")
+cat("    cah_curves_species/spacing.png\n")
+cat("    cah_species/spacing_differences.png\n")
+cat("  COMBINED GRIDS\n")
+cat("    combined_3x2_curves.png\n")
 cat("  DIAGNOSTICS\n")
-cat("    diag_height/crown/cah _species/_spacing .pdf\n")
+cat("    diag_height/crown/cah _species/_spacing .png\n")
 cat("\n── Done ──────────────────────────────────────────────────────────────\n")
