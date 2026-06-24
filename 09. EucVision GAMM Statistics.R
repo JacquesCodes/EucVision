@@ -35,9 +35,25 @@ library(tidyverse)
 library(gratia)
 library(patchwork)
 library(sf)
+library(tictoc)
 
 # Add Calibri font
 windowsFonts(Calibri = windowsFont("Calibri"))
+
+# tictoc() function for runtime
+
+# 1. Define the custom formatting function
+toc_in_mins <- function(tic, toc, msg = "") {
+  # Calculate elapsed minutes and round to 2 decimal places
+  elapsed_mins <- round((toc - tic) / 60, 2)
+  
+  # Format the printed console message
+  outmsg <- paste0(msg, ": ", elapsed_mins, " minutes elapsed")
+  return(outmsg)
+}
+
+tic("Model Starts")
+
 
 # =============================================================================
 # OUTPUT SETTINGS
@@ -64,10 +80,14 @@ INCLUDE_SPECIES <- c(
   "Cladocalyx"
 )
 
+# Toggle between "All" (whole population) and "Dominant" (top 20% by height)
+POPULATION_SUBSET <- "Dominant" 
+
 cat("\n")
 cat("=====================================================\n")
 cat("GAMM ANALYSIS SETTINGS\n")
 cat("=====================================================\n")
+cat("Population subset: ", POPULATION_SUBSET, "\n")
 cat("Species included:\n")
 print(INCLUDE_SPECIES)
 cat("\nBaseline species:", BASELINE_SPECIES, "\n")
@@ -110,6 +130,16 @@ df_base <- df_raw |>
   filter(Death_Date == "Alive") |>
   filter(Date >= as.Date("2025-09-01")) |>
   filter(Culture == "Single")
+
+# ── NEW: Dominant Tree Filter Switch ──
+if (POPULATION_SUBSET == "Dominant") {
+  df_base <- df_base |>
+    group_by(Species, Spacing_f, Date) |>
+    mutate(dom_threshold = quantile(Calibrated_Height_m, probs = 0.80, na.rm = TRUE)) |>
+    filter(Calibrated_Height_m >= dom_threshold) |>
+    ungroup() |>
+    select(-dom_threshold)
+}
 
 # ── Height — Gaussian, raw scale ─────────────────────────────────────────────
 df_h <- df_base |>
@@ -193,14 +223,13 @@ fit_gamm_pair <- function(df, response_col) {
     as.formula(paste0(response_col, " ~
       s(days, k = 12, bs = 'cr') +
       s(days, by = Species,   k = 10, bs = 'tp') +
-      s(X, Y, bs = 'tp', k = 40) +    # <--- NEW SPATIAL SMOOTH
       Spacing_f +
       s(Plot_ID, bs = 're') +
       s(Tree_ID, bs = 're')")),
     data     = df,
     family   = gaussian(),
     method   = "fREML",
-    discrete = FALSE
+    discrete = TRUE     
   )
   
   cat("  Fitting spacing model...\n")
@@ -208,14 +237,13 @@ fit_gamm_pair <- function(df, response_col) {
     as.formula(paste0(response_col, " ~
       s(days, k = 12, bs = 'cr') +
       s(days, by = Spacing_f, k = 10, bs = 'tp') +
-      s(X, Y, bs = 'tp', k = 40) +    # <--- NEW SPATIAL SMOOTH
       Species +
       s(Plot_ID, bs = 're') +
       s(Tree_ID, bs = 're')")),
     data     = df,
     family   = gaussian(),
     method   = "fREML",
-    discrete = FALSE
+    discrete = TRUE         
   )
   
   list(species = m_sp, spacing = m_sc)
@@ -234,8 +262,7 @@ predict_traj <- function(model, newdata, backtransform = FALSE) {
     type = "response",
     exclude = c(
       "s(Plot_ID)",
-      "s(Tree_ID)",
-      "s(X,Y)"
+      "s(Tree_ID)"
     )
   )
   
@@ -321,30 +348,114 @@ theme_thesis <- function() {
     )
 }
 
+# ── Custom Thesis Theme ───────────────────────────────────────────────────────
+theme_thesis <- function() {
+  theme_classic(base_size = 9, base_family = "Calibri") +
+    theme(
+      # Text and Titles
+      plot.title       = element_text(size = 10, face = "bold"),
+      plot.subtitle    = element_text(size = 9, colour = "grey40"),
+      axis.title       = element_text(size = 9),
+      axis.text        = element_text(size = 8),
+      
+      # Spines and Ticks
+      axis.line        = element_line(colour = "black", linewidth = 1.2),
+      axis.ticks       = element_line(colour = "black", linewidth = 1),
+      axis.ticks.length = unit(4, "pt"),
+      
+      # Gridlines (y-axis only, dashed, grey, transparent)
+      panel.grid.major.y = element_line(colour = alpha("#b0b0b0", 0.25), linewidth = 0.5, linetype = "solid"),
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor   = element_blank(),
+      
+      # Legend Settings (Moved to top left, border RESTORED)
+      legend.position      = "top", 
+      legend.justification = "left",
+      legend.background    = element_rect(fill = "white", colour = "lightgray", linewidth = 0.5), # <-- Border is back!
+      legend.title         = element_text(size = 10, face = "bold"),
+      legend.text          = element_text(size = 8),
+      legend.key.size      = unit(0.4, "cm"),
+      legend.margin        = margin(t = 2, r = 5, b = 2, l = 5, unit = "pt"), # Adds a bit of breathing room inside the box
+      
+      # Trim outer margins to save vertical space
+      plot.margin = margin(t = 2, r = 5, b = 2, l = 2, unit = "pt")
+    )
+}
+
+# ── Shared curve plot builder ─────────────────────────────────────────────────
+# Note: title and subtitle arguments have been removed to save vertical space
+curve_plot <- function(curve_df, colour_var, colour_vals, colour_labels = NULL,
+                       y_label, legend_title = NULL) {
+  ggplot(curve_df, aes(x = days,
+                       colour = .data[[colour_var]],
+                       fill   = .data[[colour_var]])) +
+    geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.15, colour = NA) +
+    geom_line(aes(y = fit), linewidth = 0.9) +
+    scale_colour_manual(
+      values = colour_vals,
+      labels = colour_labels,
+      drop = FALSE
+    ) +
+    
+    scale_fill_manual(
+      values = colour_vals,
+      labels = colour_labels,
+      drop = FALSE
+    ) +
+    
+    # Keep 2-row legend so it doesn't stretch too wide across the top
+    guides(
+      colour = guide_legend(nrow = 2), 
+      fill = "none"
+    ) +
+    scale_x_continuous(breaks = seq(0, 270, by = 60)) +
+    
+    # Padding returned to standard 5% since the legend is now outside
+    scale_y_continuous(expand = expansion(mult = c(0.02, 0.05))) +
+    
+    labs(x = "Days from 1 September 2025", y = y_label,
+         colour = legend_title, fill = legend_title) +
+    theme_thesis()
+}
+
 # ── Plot pairwise differences ─────────────────────────────────────────────────
-plot_diffs <- function(diff_df, title, subtitle, y_label,
-                       fill_col = "steelblue", ncol = 3) {
+plot_diffs <- function(diff_df, y_label, fill_col = "steelblue", ncol = 3) {
+  
+  # 1. Calculate a single global Y position so rugs align perfectly across all facets
+  global_min_y <- min(diff_df$lwr, na.rm = TRUE)
+  global_max_y <- max(diff_df$upr, na.rm = TRUE)
+  
+  # Set the rug position slightly below the lowest overall confidence interval
+  rug_y_pos <- global_min_y - ((global_max_y - global_min_y) * 0.05)
+  
   ggplot(diff_df, aes(x = days, y = diff)) +
     geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.2, fill = fill_col) +
     geom_line(colour = fill_col, linewidth = 0.8) +
     geom_hline(yintercept = 0, linetype = "dashed",
                colour = "grey40", linewidth = 0.5) +
-    geom_rug(data = diff_df[diff_df$sig, ], sides = "b",
-             colour = "red", alpha = 0.5) +
+    
+    # 2. The Floating Rug (using vertical lines, shape = 124)
+    # Adjust `size = 6` up or down to make the rugs bigger or smaller!
+    geom_point(data = diff_df[diff_df$sig, ],
+               aes(x = days, y = rug_y_pos),
+               colour = "#ff3333", alpha = 0.8,
+               shape = 124, size = 2) +
+    
     facet_wrap(~ comparison, ncol = ncol) +
-    labs(title = title, subtitle = subtitle,
-         x = "Days from 1 September 2025", y = y_label) +
-    theme_thesis() # <-- Just call the function here!
+    
+    # 3. Crucial: Expand the bottom of the Y-axis by 15% so the floating rugs have room
+    scale_y_continuous(expand = expansion(mult = c(0.15, 0.05))) +
+    
+    labs(x = "Days from 1 September 2025", y = y_label) +
+    theme_thesis()
 }
-
 
 # ── Statistics helpers ────────────────────────────────────────────────────────
 smooth_sig_table <- function(model, response_label) {
   s      <- summary(model)
   sp_tbl <- as.data.frame(s$s.table)
   sp_tbl <- sp_tbl[
-  grepl("^s\\(days\\):", rownames(sp_tbl)) |
-  rownames(sp_tbl) == "s(X,Y)",
+    grepl("^s\\(days\\):", rownames(sp_tbl)),
   ]
   sp_tbl$Term     <- rownames(sp_tbl)
   sp_tbl$Response <- response_label
@@ -372,18 +483,15 @@ marginal_means <- function(model, group_var, group_levels,
     !!fixed_var := factor(fixed_level,  levels = levels(df_ref[[fixed_var]])),
     Culture = factor("Single", levels = levels(df_ref$Culture)),
     Plot_ID = levels(df_ref$Plot_ID)[1],
-    Tree_ID = levels(df_ref$Tree_ID)[1],
-    X = x_ref,  # <--- Added
-    Y = y_ref   # <--- Added
+    Tree_ID = levels(df_ref$Tree_ID)[1]
   )
   
   map2_dfr(key_days, key_labels, function(d, lbl) {
     nd      <- pred_base |> mutate(days = d)
     
-    # 2. Add "s(X,Y)" to the exclude list
     preds   <- predict(model, newdata = nd, se.fit = TRUE,
                        type = "response",
-                       exclude = c("s(Plot_ID)", "s(Tree_ID)", "s(X,Y)")) 
+                       exclude = c("s(Plot_ID)", "s(Tree_ID)"))
     
     fit_raw <- as.numeric(preds$fit)
     se_raw  <- as.numeric(preds$se.fit)
@@ -413,6 +521,8 @@ pairwise_at_day <- function(diff_df, target_day, response_label, factor_label) {
     filter(abs(days - target_day) == min(abs(days - target_day))) |>
     slice(1, .by = comparison) |>
     mutate(
+      z_stat     = diff / se_diff,
+      p_val      = 2 * pnorm(-abs(z_stat)),          # two-tailed
       Response   = response_label,
       Factor     = factor_label,
       Timepoint  = paste0("Day ", target_day, " from 1 Sep 2025"),
@@ -420,7 +530,12 @@ pairwise_at_day <- function(diff_df, target_day, response_label, factor_label) {
       SE         = round(se_diff, 3),
       CI_lower   = round(lwr, 3),
       CI_upper   = round(upr, 3),
-      Sig        = ifelse(sig, "YES ***", "no")
+      Sig        = case_when(
+        p_val < 0.001 ~ "***",
+        p_val < 0.01  ~ "**",
+        p_val < 0.05  ~ "*",
+        TRUE          ~ "ns"
+      )
     ) |>
     select(Response, Factor, Comparison = comparison,
            Difference, SE, CI_lower, CI_upper, Sig)
@@ -429,10 +544,6 @@ pairwise_at_day <- function(diff_df, target_day, response_label, factor_label) {
 
 # ── Prediction grid helpers ───────────────────────────────────────────────────
 make_full_grid <- function(days_seq, df_ref) {
-  
-  x_ref <- mean(df_ref$X, na.rm = TRUE)
-  y_ref <- mean(df_ref$Y, na.rm = TRUE)
-  
   expand_grid(
     days = days_seq,
     Species   = levels(df_ref$Species),
@@ -443,17 +554,11 @@ make_full_grid <- function(days_seq, df_ref) {
       Spacing_f = factor(Spacing_f, levels = levels(df_ref$Spacing_f)),
       Culture   = factor("Single", levels = levels(df_ref$Culture)),
       Plot_ID   = levels(df_ref$Plot_ID)[1],
-      Tree_ID   = levels(df_ref$Tree_ID)[1],
-      X = x_ref,
-      Y = y_ref
+      Tree_ID   = levels(df_ref$Tree_ID)[1]
     )
 }
 
 make_species_grid <- function(days_seq, df_ref) {
-  
-  x_ref <- mean(df_ref$X, na.rm = TRUE)
-  y_ref <- mean(df_ref$Y, na.rm = TRUE)
-  
   expand_grid(
     days = days_seq,
     Species = levels(df_ref$Species)
@@ -463,17 +568,11 @@ make_species_grid <- function(days_seq, df_ref) {
       Spacing_f = levels(df_ref$Spacing_f)[1],
       Culture   = factor("Single", levels = levels(df_ref$Culture)),
       Plot_ID   = levels(df_ref$Plot_ID)[1],
-      Tree_ID   = levels(df_ref$Tree_ID)[1],
-      X = x_ref,
-      Y = y_ref
+      Tree_ID   = levels(df_ref$Tree_ID)[1]
     )
 }
 
 make_spacing_grid <- function(days_seq, df_ref) {
-  
-  x_ref <- mean(df_ref$X, na.rm = TRUE)
-  y_ref <- mean(df_ref$Y, na.rm = TRUE)
-  
   expand_grid(
     days = days_seq,
     Spacing_f = levels(df_ref$Spacing_f)
@@ -483,9 +582,7 @@ make_spacing_grid <- function(days_seq, df_ref) {
       Species   = levels(df_ref$Species)[1],
       Culture   = factor("Single", levels = levels(df_ref$Culture)),
       Plot_ID   = levels(df_ref$Plot_ID)[1],
-      Tree_ID   = levels(df_ref$Tree_ID)[1],
-      X = x_ref,
-      Y = y_ref
+      Tree_ID   = levels(df_ref$Tree_ID)[1]
     )
 }
 
@@ -695,91 +792,6 @@ curve_r_sc <- predict_traj(models_r$spacing, make_spacing_grid(days_r, df_r),
 # =============================================================================
 
 cat("\nGenerating plots...\n")
-
-# ── Custom Thesis Theme ───────────────────────────────────────────────────────
-theme_thesis <- function() {
-  theme_classic(base_size = 9, base_family = "Calibri") +
-    theme(
-      # Text and Titles
-      plot.title       = element_text(size = 10, face = "bold"),
-      plot.subtitle    = element_text(size = 9, colour = "grey40"),
-      axis.title       = element_text(size = 9),
-      axis.text        = element_text(size = 8),
-      
-      # Spines and Ticks
-      axis.line        = element_line(colour = "black", linewidth = 1.2),
-      axis.ticks       = element_line(colour = "black", linewidth = 1),
-      axis.ticks.length = unit(4, "pt"),
-      
-      # Gridlines (y-axis only, dashed, grey, transparent)
-      panel.grid.major.y = element_line(colour = alpha("#b0b0b0", 0.25), linewidth = 0.5, linetype = "solid"),
-      panel.grid.major.x = element_blank(),
-      panel.grid.minor   = element_blank(),
-      
-      # Legend Settings (Moved to top left, border RESTORED)
-      legend.position      = "top", 
-      legend.justification = "left",
-      legend.background    = element_rect(fill = "white", colour = "lightgray", linewidth = 0.5), # <-- Border is back!
-      legend.title         = element_text(size = 10, face = "bold"),
-      legend.text          = element_text(size = 8),
-      legend.key.size      = unit(0.4, "cm"),
-      legend.margin        = margin(t = 2, r = 5, b = 2, l = 5, unit = "pt"), # Adds a bit of breathing room inside the box
-      
-      # Trim outer margins to save vertical space
-      plot.margin = margin(t = 2, r = 5, b = 2, l = 2, unit = "pt")
-    )
-}
-
-# ── Shared curve plot builder ─────────────────────────────────────────────────
-# Note: title and subtitle arguments have been removed to save vertical space
-curve_plot <- function(curve_df, colour_var, colour_vals, colour_labels = NULL,
-                       y_label, legend_title = NULL) {
-  ggplot(curve_df, aes(x = days,
-                       colour = .data[[colour_var]],
-                       fill   = .data[[colour_var]])) +
-    geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.15, colour = NA) +
-    geom_line(aes(y = fit), linewidth = 0.9) +
-    scale_colour_manual(
-      values = colour_vals,
-      labels = colour_labels,
-      drop = FALSE
-    ) +
-    
-    scale_fill_manual(
-      values = colour_vals,
-      labels = colour_labels,
-      drop = FALSE
-    ) +
-    
-    # Keep 2-row legend so it doesn't stretch too wide across the top
-    guides(
-      colour = guide_legend(nrow = 2), 
-      fill = "none"
-    ) +
-    scale_x_continuous(breaks = seq(0, 270, by = 60)) +
-    
-    # Padding returned to standard 5% since the legend is now outside
-    scale_y_continuous(expand = expansion(mult = c(0.02, 0.05))) +
-    
-    labs(x = "Days from 1 September 2025", y = y_label,
-         colour = legend_title, fill = legend_title) +
-    theme_thesis()
-}
-
-# ── Plot pairwise differences ─────────────────────────────────────────────────
-# Note: title and subtitle arguments have been removed
-plot_diffs <- function(diff_df, y_label, fill_col = "steelblue", ncol = 3) {
-  ggplot(diff_df, aes(x = days, y = diff)) +
-    geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.2, fill = fill_col) +
-    geom_line(colour = fill_col, linewidth = 0.8) +
-    geom_hline(yintercept = 0, linetype = "dashed",
-               colour = "grey40", linewidth = 0.5) +
-    geom_rug(data = diff_df[diff_df$sig, ], sides = "b",
-             colour = "red", alpha = 0.5) +
-    facet_wrap(~ comparison, ncol = ncol) +
-    labs(x = "Days from 1 September 2025", y = y_label) +
-    theme_thesis() 
-}
 
 # ── HEIGHT plots ──────────────────────────────────────────────────────────────
 p_h_sp_diff <- plot_diffs(sp_diffs_h,
@@ -1001,7 +1013,7 @@ print(tbl3, n = Inf)
 write_csv(tbl3, file.path(OUTPUT_DIR,"stats_table3_pairwise_differences.csv"))
 
 cat("\n── Significant pairs at Day 266 ─────────────────────────────────────\n")
-sig_only <- tbl3 |> filter(Sig == "YES ***")
+sig_only <- tbl3 |> filter(Sig %in% c("*", "**", "***"))
 for (resp in c("Height (m)", "Crown Area (m2)", "CA:H Ratio (m2 m-1)")) {
   for (fac in c("Species", "Spacing")) {
     sub <- sig_only |> filter(Response == resp, Factor == fac)
@@ -1068,3 +1080,6 @@ cat("    combined_3x2_curves.png\n")
 cat("  DIAGNOSTICS\n")
 cat("    diag_height/crown/cah _species/_spacing .png\n")
 cat("\n── Done ──────────────────────────────────────────────────────────────\n")
+
+# End counter
+toc(func.toc = toc_in_mins)
