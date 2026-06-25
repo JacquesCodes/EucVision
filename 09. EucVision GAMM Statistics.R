@@ -1,30 +1,55 @@
 # =============================================================================
 # GAMM — Calibrated Height, Crown Area & Crown:Height Ratio
-# Eucalyptus species × spacing trial
+# Eucalyptus species × spacing trial | EucVision, IMPACT OAL, Stellenbosch
 #
-# Time series: 1 September 2025 onwards
+# Time series: 1 September 2025 onwards (t0 = 2025-09-01)
+# Population:  Single-culture plots only | Living trees only
+#              Toggle POPULATION_SUBSET for "All" or "Dominant" (top 20% height)
 #
 # Three response variables:
-#   Response 1: Calibrated_Height_m  — Gaussian  (identity link, raw scale)
-#   Response 2: Crown_Area_m2        — Gaussian  (log-transformed; back-transformed for plots)
-#   Response 3: CA:H ratio           — Gaussian  (log-transformed; back-transformed for plots)
+#   Response 1: Calibrated_Height_m  — Gaussian, identity link (raw scale)
+#   Response 2: Crown_Area_m2        — Gaussian, identity link (log scale)
+#   Response 3: CA:H ratio           — Gaussian, identity link (log scale)
 #
 # WHY LOG TRANSFORMATION FOR CROWN AND CA:H:
-#   Gamma(log) failed to converge after 4+ hours because log(Crown) and
-#   log(CA:H) are LEFT-skewed (skew ≈ -0.6 to -1.5 by spacing), meaning
-#   the Gaussian on the log scale is a better fit than Gamma on original scale.
-#   Predictions are back-transformed to m² and m² m⁻¹ using the delta method:
-#   E[exp(y)] ≈ exp(fit + 0.5 * se²), SE ≈ exp(fit) * se
+#   Gamma(log) failed to converge (4+ hrs) because log(Crown) and log(CA:H)
+#   are LEFT-skewed (skew ~ -0.6 to -1.5 by spacing). Gaussian on the log
+#   scale is a better fit than Gamma on the original scale.
+#   Point predictions back-transformed via smearing correction:
+#     E[exp(y)] ~ exp(fit + 0.5 * se^2)
+#   Confidence intervals built on log scale then exponentiated:
+#     [exp(fit - 1.96*se),  exp(fit + 1.96*se)]
+#   This guarantees positive CI bounds and correct asymmetry.
 #
-# For each response, two models:
-#   m_species : s(days, by=Species)   + Spacing_f fixed + random effects
-#   m_spacing : s(days, by=Spacing_f) + Species fixed   + random effects
+# Model structure (per response, two models):
+#   m_species: s(days, k=12, bs='cr')
+#            + s(days, by=Species,   k=10, bs='tp')
+#            + Spacing_f                              [fixed parametric]
+#            + s(Plot_ID, bs='re') + s(Tree_ID, bs='re')
 #
-# Global smooth uses bs='cr' (cubic regression spline) to prevent boundary
-# overshoot caused by the 59-day gap between Sep 1 and Oct 30.
+#   m_spacing: s(days, k=12, bs='cr')
+#            + s(days, by=Spacing_f, k=10, bs='tp')
+#            + Species                               [fixed parametric]
+#            + s(Plot_ID, bs='re') + s(Tree_ID, bs='re')
 #
-# Spacing codes:  1x1m = 1 m²/tree  |  2x2m = 4 m²/tree
-#                 3x3m = 9 m²/tree  |  5x5m = 25 m²/tree
+# Global smooth bs='cr' (cubic regression spline) prevents boundary overshoot
+# from the 59-day gap between Sep 1 and Oct 30 2025.
+#
+# Fitted with bam(), method='fREML', discrete=TRUE for computational efficiency.
+# Baseline: Species = Grandis | Spacing = 1x1m
+#
+# Spacing codes:  1x1m =  1 m2/tree  |  2x2m =  4 m2/tree
+#                 3x3m =  9 m2/tree  |  5x5m = 25 m2/tree
+#
+# Outputs saved to OUTPUT_DIR:
+#   stats_table1_smooth_significance.csv
+#   stats_table2_marginal_means.csv
+#   stats_table3_pairwise_differences.csv
+#   height / crown / cah  _curves_ species / spacing .png
+#   height / crown / cah  _species / spacing _differences.png
+#   combined_3x2_curves.png
+#   diag_ height / crown / cah  _ species / spacing .png
+#   Height/Crown/CAH_Species/Spacing_gamcheck.txt
 # =============================================================================
 
 
@@ -36,6 +61,7 @@ library(gratia)
 library(patchwork)
 library(sf)
 library(tictoc)
+library(ggrepel)
 
 # Add Calibri font
 windowsFonts(Calibri = windowsFont("Calibri"))
@@ -81,7 +107,7 @@ INCLUDE_SPECIES <- c(
 )
 
 # Toggle between "All" (whole population) and "Dominant" (top 20% by height)
-POPULATION_SUBSET <- "Dominant" 
+POPULATION_SUBSET <- "All" 
 
 cat("\n")
 cat("=====================================================\n")
@@ -95,24 +121,10 @@ cat("Baseline spacing:", BASELINE_SPACING, "\n")
 cat("=====================================================\n\n")
 
 # ── 1. Load & clean data ──────────────────────────────────────────────────────
-# 1. Load one shapefile to serve as the master coordinate reference
-base_crowns <- st_read("E:/Remote Sensing Media/02. 01 September 2025/09. Crown Metrics/Crown_Metrics_01_September_2025.shp", quiet = TRUE) %>%
+
+df_raw <- read_csv("C:/Users/jakev/Downloads/UAV_Master_Dataset_25-05-2026.csv", 
+                   show_col_types = FALSE) %>%
   mutate(Tree = round(as.numeric(Tree), 2))
-
-# 2. Extract X and Y centroids 
-coords_df <- base_crowns %>%
-  st_centroid() %>%
-  mutate(
-    X = st_coordinates(.)[,1],
-    Y = st_coordinates(.)[,2]
-  ) %>%
-  st_drop_geometry() %>%
-  select(Compartment = Cmprtmn, Line, Plot, Tree, X, Y)
-
-# 3. Merge X and Y into your main dataset
-df_raw <- read_csv("C:/Users/jakev/Downloads/UAV_Master_Dataset_25-05-2026.csv", show_col_types = FALSE) %>%
-  mutate(Tree = round(as.numeric(Tree), 2)) %>%
-  left_join(coords_df, by = c("Compartment", "Line", "Plot", "Tree"))
 
 df_base <- df_raw |>
   mutate(
@@ -131,7 +143,7 @@ df_base <- df_raw |>
   filter(Date >= as.Date("2025-09-01")) |>
   filter(Culture == "Single")
 
-# ── NEW: Dominant Tree Filter Switch ──
+# ── Dominant Tree Filter Switch ──
 if (POPULATION_SUBSET == "Dominant") {
   df_base <- df_base |>
     group_by(Species, Spacing_f, Date) |>
@@ -260,37 +272,29 @@ predict_traj <- function(model, newdata, backtransform = FALSE) {
     newdata = newdata,
     se.fit = TRUE,
     type = "response",
-    exclude = c(
-      "s(Plot_ID)",
-      "s(Tree_ID)"
-    )
+    exclude = c("s(Plot_ID)", "s(Tree_ID)")
   )
   
   fit_raw <- as.numeric(preds$fit)
   se_raw  <- as.numeric(preds$se.fit)
   
   if (backtransform) {
-    
-    fit_out <- exp(fit_raw + 0.5 * se_raw^2)
-    se_out  <- exp(fit_raw) * se_raw
-    
+    fit_out <- exp(fit_raw + 0.5 * se_raw^2)  
+    lwr_out <- exp(fit_raw - 1.645 * se_raw)   
+    upr_out <- exp(fit_raw + 1.645 * se_raw)
   } else {
-    
     fit_out <- fit_raw
-    se_out  <- se_raw
-    
+    lwr_out <- fit_raw - 1.645 * se_raw
+    upr_out <- fit_raw + 1.645 * se_raw
   }
   
   newdata |>
-    mutate(
-      fit = fit_out,
-      se  = se_out
-    )
+    mutate(fit = fit_out, lwr = lwr_out, upr = upr_out, se = se_raw)
 }
 
 
 # ── All pairwise differences ───────────────────────────────────────────────────
-pairwise_diffs <- function(pred_grid, group_var, average_over) {
+pairwise_diffs <- function(pred_grid, group_var) {
   grp_levels <- if (is.factor(pred_grid[[group_var]])) {
     levels(pred_grid[[group_var]])
   } else {
@@ -311,41 +315,11 @@ pairwise_diffs <- function(pred_grid, group_var, average_over) {
       days       = g1$days,
       diff       = g1$fit - g2$fit,
       se_diff    = sqrt(g1$se^2 + g2$se^2),
-      lwr        = diff - 1.96 * se_diff,
-      upr        = diff + 1.96 * se_diff,
+      lwr        = diff - 1.645 * se_diff,
+      upr        = diff + 1.645 * se_diff,
       sig        = (lwr > 0) | (upr < 0)
     )
   })
-}
-
-# ── Custom Thesis Theme ───────────────────────────────────────────────────────
-theme_thesis <- function() {
-  theme_classic(base_size = 9, base_family = "Calibri") +
-    theme(
-      # Text and Titles
-      plot.title       = element_text(size = 10, face = "bold"),
-      plot.subtitle    = element_text(size = 9, colour = "grey40"),
-      axis.title       = element_text(size = 9),
-      axis.text        = element_text(size = 8),
-      
-      # Spines and Ticks
-      axis.line        = element_line(colour = "black", linewidth = 1.2),
-      axis.ticks       = element_line(colour = "black", linewidth = 1),
-      axis.ticks.length = unit(4, "pt"),
-      
-      # Gridlines (y-axis only, dashed, grey, transparent)
-      panel.grid.major.y = element_line(colour = alpha("#b0b0b0", 0.25), linewidth = 0.5, linetype = "solid"),
-      panel.grid.major.x = element_blank(),
-      panel.grid.minor   = element_blank(),
-      
-      # Legend Settings (Upper left, framed, slightly transparent white background)
-      legend.position      = c(0.02, 0.98), 
-      legend.justification = c(0, 1),
-      legend.background    = element_rect(fill = alpha("white", 0.95), colour = "lightgray", linewidth = 0.5),
-      legend.title         = element_text(size = 10, face = "bold"),
-      legend.text          = element_text(size = 8),
-      legend.key.size      = unit(0.4, "cm")
-    )
 }
 
 # ── Custom Thesis Theme ───────────────────────────────────────────────────────
@@ -408,7 +382,7 @@ curve_plot <- function(curve_df, colour_var, colour_vals, colour_labels = NULL,
       colour = guide_legend(nrow = 2), 
       fill = "none"
     ) +
-    scale_x_continuous(breaks = seq(0, 270, by = 60)) +
+    scale_x_continuous(breaks = seq(0, 270, by = 60), limits = c(0, 290)) +
     
     # Padding returned to standard 5% since the legend is now outside
     scale_y_continuous(expand = expansion(mult = c(0.02, 0.05))) +
@@ -474,10 +448,6 @@ marginal_means <- function(model, group_var, group_levels,
                            df_ref, key_days, key_labels, response_label,
                            backtransform = FALSE) {
   
-  # 1. Define reference X and Y coordinates
-  x_ref <- mean(df_ref$X, na.rm = TRUE)
-  y_ref <- mean(df_ref$Y, na.rm = TRUE)
-  
   pred_base <- tibble(
     !!group_var := factor(group_levels, levels = levels(df_ref[[group_var]])),
     !!fixed_var := factor(fixed_level,  levels = levels(df_ref[[fixed_var]])),
@@ -509,8 +479,8 @@ marginal_means <- function(model, group_var, group_levels,
              Timepoint = lbl,
              Mean      = round(fit_out, 3),
              SE        = round(se_out, 3),
-             CI_lower  = round(Mean - 1.96 * SE, 3),
-             CI_upper  = round(Mean + 1.96 * SE, 3)) |>
+             CI_lower  = round(Mean - 1.645 * SE, 3),
+             CI_upper  = round(Mean + 1.645 * SE, 3)) |>
       select(Response, Timepoint, !!group_var, Mean, SE, CI_lower, CI_upper)
   })
 }
@@ -534,6 +504,7 @@ pairwise_at_day <- function(diff_df, target_day, response_label, factor_label) {
         p_val < 0.001 ~ "***",
         p_val < 0.01  ~ "**",
         p_val < 0.05  ~ "*",
+        p_val < 0.10  ~ ".",
         TRUE          ~ "ns"
       )
     ) |>
@@ -724,12 +695,12 @@ grid_r_sc_pred <- predict_traj(models_r$spacing, make_full_grid(days_r, df_r),
 
 # Pairwise differences
 cat("Computing pairwise differences...\n")
-sp_diffs_h <- pairwise_diffs(grid_h_sp_pred, "Species",   "Spacing_f")
-sc_diffs_h <- pairwise_diffs(grid_h_sc_pred, "Spacing_f", "Species")
-sp_diffs_c <- pairwise_diffs(grid_c_sp_pred, "Species",   "Spacing_f")
-sc_diffs_c <- pairwise_diffs(grid_c_sc_pred, "Spacing_f", "Species")
-sp_diffs_r <- pairwise_diffs(grid_r_sp_pred, "Species",   "Spacing_f")
-sc_diffs_r <- pairwise_diffs(grid_r_sc_pred, "Spacing_f", "Species")
+sp_diffs_h <- pairwise_diffs(grid_h_sp_pred, "Species")
+sc_diffs_h <- pairwise_diffs(grid_h_sc_pred, "Spacing_f")
+sp_diffs_c <- pairwise_diffs(grid_c_sp_pred, "Species")
+sc_diffs_c <- pairwise_diffs(grid_c_sc_pred, "Spacing_f")
+sp_diffs_r <- pairwise_diffs(grid_r_sp_pred, "Species")
+sc_diffs_r <- pairwise_diffs(grid_r_sc_pred, "Spacing_f")
 
 cat("\nRange checks (all should be non-zero):\n")
 cat("Height   species:", round(range(sp_diffs_h$diff), 3), "\n")
@@ -740,24 +711,14 @@ cat("CA:H     species:", round(range(sp_diffs_r$diff), 3), "\n")
 cat("CA:H     spacing:", round(range(sc_diffs_r$diff), 3), "\n")
 
 # Growth curve grids
-curve_h_sp <- predict_traj(models_h$species, make_species_grid(days_h, df_h)) |>
-  mutate(lwr = fit - 1.96 * se, upr = fit + 1.96 * se)
-curve_h_sc <- predict_traj(models_h$spacing, make_spacing_grid(days_h, df_h)) |>
-  mutate(lwr = fit - 1.96 * se, upr = fit + 1.96 * se)
+curve_h_sp <- predict_traj(models_h$species, make_species_grid(days_h, df_h))
+curve_h_sc <- predict_traj(models_h$spacing, make_spacing_grid(days_h, df_h))
 
-curve_c_sp <- predict_traj(models_c$species, make_species_grid(days_c, df_c),
-                           backtransform = TRUE) |>
-  mutate(lwr = fit - 1.96 * se, upr = fit + 1.96 * se)
-curve_c_sc <- predict_traj(models_c$spacing, make_spacing_grid(days_c, df_c),
-                           backtransform = TRUE) |>
-  mutate(lwr = fit - 1.96 * se, upr = fit + 1.96 * se)
+curve_c_sp <- predict_traj(models_c$species, make_species_grid(days_c, df_c), backtransform = TRUE)
+curve_c_sc <- predict_traj(models_c$spacing, make_spacing_grid(days_c, df_c), backtransform = TRUE)
 
-curve_r_sp <- predict_traj(models_r$species, make_species_grid(days_r, df_r),
-                           backtransform = TRUE) |>
-  mutate(lwr = fit - 1.96 * se, upr = fit + 1.96 * se)
-curve_r_sc <- predict_traj(models_r$spacing, make_spacing_grid(days_r, df_r),
-                           backtransform = TRUE) |>
-  mutate(lwr = fit - 1.96 * se, upr = fit + 1.96 * se)
+curve_r_sp <- predict_traj(models_r$species, make_species_grid(days_r, df_r), backtransform = TRUE)
+curve_r_sc <- predict_traj(models_r$spacing, make_spacing_grid(days_r, df_r), backtransform = TRUE)
 
 
 # =============================================================================
@@ -868,11 +829,166 @@ p_r_sc_curves <- curve_plot(curve_r_sc, "Spacing_f", spacing_colors,
 ggsave(file.path(OUTPUT_DIR, "cah_curves_spacing.png"), p_r_sc_curves,
        width = 6.30, height = 3.2, units = "in", dpi = 300)
 
+# ── SIGNIFICANCE LABELS (DAY 266) ─────────────────────────────────────────────
+
+attach_labels <- function(curve_df, group_var, letters_vector, y_positions) {
+  
+  curve_df |>
+    filter(days == max(days)) |>
+    arrange(desc(fit)) |>
+    mutate(
+      letter = letters_vector,
+      y_lab  = y_positions
+    ) |>
+    select(days, fit, y_lab, all_of(group_var), letter)
+}
+
+# 1. HEIGHT LABELS
+lbl_h_sp <- attach_labels(
+  curve_h_sp,
+  "Species",
+  c("a", "a", "b", "bc", "c"),
+  c(4.1, 3.80, 3.5, 3.2, 2.85)
+)
+
+p_h_sp_curves <- p_h_sp_curves +
+  geom_label(
+    data = lbl_h_sp,
+    aes(
+      x = max(days) + 12,
+      y = y_lab,
+      label = letter,
+      fill = Species
+    ),
+    color = "white",
+    fontface = "bold",
+    size = 3,
+    label.r = unit(0, "lines"),
+    show.legend = FALSE
+  )
+
+lbl_h_sc <- attach_labels(
+  curve_h_sc,
+  "Spacing_f",
+  c("a", "ab", "bc", "c"),
+  c(4.5, 4.2, 3.9, 3.6)
+)
+
+p_h_sc_curves <- p_h_sc_curves +
+  geom_label(
+    data = lbl_h_sc,
+    aes(
+      x = max(days) + 12,
+      y = y_lab,
+      label = letter,
+      fill = Spacing_f
+    ),
+    color = "white",
+    fontface = "bold",
+    size = 3,
+    label.r = unit(0, "lines"),
+    show.legend = FALSE
+  )
+
+# 2. CROWN AREA LABELS
+lbl_c_sp <- attach_labels(
+  curve_c_sp,
+  "Species",
+  c("a", "a", "b", "bc", "c"),
+  c(1.0, 0.92, 0.84, 0.76, 0.68)
+)
+
+p_c_sp_curves <- p_c_sp_curves +
+  geom_label(
+    data = lbl_c_sp,
+    aes(
+      x = max(days) + 12,
+      y = y_lab,
+      label = letter,
+      fill = Species
+    ),
+    color = "white",
+    fontface = "bold",
+    size = 3,
+    label.r = unit(0, "lines"),
+    show.legend = FALSE
+  )
+
+lbl_c_sc <- attach_labels(
+  curve_c_sc,
+  "Spacing_f",
+  c("a", "ab", "b", "c"),
+  c(2.35, 2.1, 1.8, 1.5)
+)
+
+p_c_sc_curves <- p_c_sc_curves +
+  geom_label(
+    data = lbl_c_sc,
+    aes(
+      x = max(days) + 12,
+      y = y_lab,
+      label = letter,
+      fill = Spacing_f
+    ),
+    color = "white",
+    fontface = "bold",
+    size = 3,
+    label.r = unit(0, "lines"),
+    show.legend = FALSE
+  )
+
+# 3. CA:H RATIO LABELS
+lbl_r_sp <- attach_labels(
+  curve_r_sp,
+  "Species",
+  c("a", "a", "b", "bc", "c"),
+  c(0.31, 0.29, 0.27, 0.25, 0.22)
+)
+
+p_r_sp_curves <- p_r_sp_curves +
+  geom_label(
+    data = lbl_r_sp,
+    aes(
+      x = max(days) + 12,
+      y = y_lab,
+      label = letter,
+      fill = Species
+    ),
+    color = "white",
+    fontface = "bold",
+    size = 3,
+    label.r = unit(0, "lines"),
+    show.legend = FALSE
+  )
+
+lbl_r_sc <- attach_labels(
+  curve_r_sc,
+  "Spacing_f",
+  c("a", "ab", "b", "c"),
+  c(0.58, 0.52, 0.46, 0.40)
+)
+
+p_r_sc_curves <- p_r_sc_curves +
+  geom_label(
+    data = lbl_r_sc,
+    aes(
+      x = max(days) + 12,
+      y = y_lab,
+      label = letter,
+      fill = Spacing_f
+    ),
+    color = "white",
+    fontface = "bold",
+    size = 3,
+    label.r = unit(0, "lines"),
+    show.legend = FALSE
+  )
+
 # ── Combined 3x2 Figure (Max Width) ───────────────────────────────────────────
 
 cat("\nAssembling 3x2 combined grid (independent Y-axes)...\n")
 
-# 1. Helper function to strip X-axes on inner plots
+# 1. Helper function to strip axes on inner plots
 clean_panel <- function(p, keep_legend = FALSE, keep_x = FALSE, keep_y = TRUE) {
   p <- p + theme(plot.margin = margin(t = 5, r = 5, b = 5, l = 5)) 
   
@@ -885,23 +1001,22 @@ clean_panel <- function(p, keep_legend = FALSE, keep_x = FALSE, keep_y = TRUE) {
   }
   
   if (!keep_y) {
-    p <- p + theme(axis.title.y = element_blank(), 
-                   axis.text.y = element_blank(), 
-                   axis.ticks.y = element_blank())
+    # FIX: Only remove the axis title (the text label), but KEEP the numbers and ticks!
+    p <- p + theme(axis.title.y = element_blank()) 
   }
   
   return(p)
 }
 
-# 2. Apply cleaning to all 6 panels
+# 2. Apply cleaning to all 6 panels (Note keep_y = FALSE for the right column)
 h_sp_3x2 <- clean_panel(p_h_sp_curves, keep_legend = TRUE, keep_x = FALSE, keep_y = TRUE)
-h_sc_3x2 <- clean_panel(p_h_sc_curves, keep_legend = TRUE, keep_x = FALSE, keep_y = TRUE)
+h_sc_3x2 <- clean_panel(p_h_sc_curves, keep_legend = TRUE, keep_x = FALSE, keep_y = FALSE)
 
 c_sp_3x2 <- clean_panel(p_c_sp_curves, keep_legend = FALSE, keep_x = FALSE, keep_y = TRUE)
-c_sc_3x2 <- clean_panel(p_c_sc_curves, keep_legend = FALSE, keep_x = FALSE, keep_y = TRUE)
+c_sc_3x2 <- clean_panel(p_c_sc_curves, keep_legend = FALSE, keep_x = FALSE, keep_y = FALSE)
 
 r_sp_3x2 <- clean_panel(p_r_sp_curves, keep_legend = FALSE, keep_x = TRUE,  keep_y = TRUE)
-r_sc_3x2 <- clean_panel(p_r_sc_curves, keep_legend = FALSE, keep_x = TRUE,  keep_y = TRUE)
+r_sc_3x2 <- clean_panel(p_r_sc_curves, keep_legend = FALSE, keep_x = TRUE,  keep_y = FALSE)
 
 # 3. Assemble the 3x2 grid with patchwork (Removed plot_annotation titles)
 p_combined_3x2 <- (h_sp_3x2 | h_sc_3x2) / 
