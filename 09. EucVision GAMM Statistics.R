@@ -123,6 +123,10 @@ cat("=====================================================\n\n")
 
 # ── 1. Load & clean data ──────────────────────────────────────────────────────
 
+# Define the dates where Crown Area polygons were borrowed
+borrowed_dates <- as.Date(c("2025-11-14", "2026-03-16", "2026-04-08", 
+                            "2026-04-13", "2026-04-29"))
+
 df_raw <- read_csv("C:/Users/jakev/Downloads/UAV_Master_Dataset_25-05-2026.csv", 
                    show_col_types = FALSE) %>%
   mutate(Tree = round(as.numeric(Tree), 2))
@@ -130,6 +134,10 @@ df_raw <- read_csv("C:/Users/jakev/Downloads/UAV_Master_Dataset_25-05-2026.csv",
 df_base <- df_raw |>
   mutate(
     Date      = as.Date(Date),
+    
+    # If the flight is a borrowed date, replace Crown Area with NA
+    Crown_Area_m2 = if_else(Date %in% borrowed_dates, NA_real_, Crown_Area_m2),
+    
     t0        = as.Date("2025-09-01"),
     days      = as.numeric(Date - t0),
     Species   = factor(Species),
