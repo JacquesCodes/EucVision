@@ -1,4 +1,4 @@
-# =============================================================================
+# ──────────────────────────────────────────────────────────────────────────────
 # GAMM — Calibrated Height, Crown Area & Crown:Height Ratio
 # Eucalyptus species × spacing trial | EucVision, IMPACT OAL, Stellenbosch
 #
@@ -50,7 +50,7 @@
 #   combined_3x2_curves.png
 #   diag_ height / crown / cah  _ species / spacing .png
 #   Height/Crown/CAH_Species/Spacing_gamcheck.txt
-# =============================================================================
+# ──────────────────────────────────────────────────────────────────────────────
 
 
 # ── 0. Packages ───────────────────────────────────────────────────────────────
@@ -62,6 +62,7 @@ library(patchwork)
 library(sf)
 library(tictoc)
 library(ggrepel)
+library(multcompView)
 
 # Add Calibri font
 windowsFonts(Calibri = windowsFont("Calibri"))
@@ -81,9 +82,9 @@ toc_in_mins <- function(tic, toc, msg = "") {
 tic("Model Starts")
 
 
-# =============================================================================
+# ──────────────────────────────────────────────────────────────────────────────
 # OUTPUT SETTINGS
-# =============================================================================
+# ──────────────────────────────────────────────────────────────────────────────
 
 OUTPUT_DIR <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/10. GAMM"
 
@@ -91,9 +92,9 @@ if (!dir.exists(OUTPUT_DIR)) {
   dir.create(OUTPUT_DIR, recursive = TRUE)
 }
 
-# =============================================================================
+# ──────────────────────────────────────────────────────────────────────────────
 # ANALYSIS SETTINGS
-# =============================================================================
+# ──────────────────────────────────────────────────────────────────────────────
 
 BASELINE_SPECIES <- "Grandis"
 BASELINE_SPACING <- "1x1m"
@@ -223,9 +224,9 @@ spacing_display <- c(
 )
 
 
-# =============================================================================
+# ──────────────────────────────────────────────────────────────────────────────
 # ── SHARED FUNCTIONS ──────────────────────────────────────────────────────────
-# =============================================================================
+# ──────────────────────────────────────────────────────────────────────────────
 
 # ── Fit a pair of GAMMs (all three responses use gaussian() ) ─────────────────
 fit_gamm_pair <- function(df, response_col) {
@@ -280,45 +281,123 @@ predict_traj <- function(model, newdata, backtransform = FALSE) {
   
   if (backtransform) {
     fit_out <- exp(fit_raw + 0.5 * se_raw^2)  
-    lwr_out <- exp(fit_raw - 1.645 * se_raw)   
-    upr_out <- exp(fit_raw + 1.645 * se_raw)
+    lwr_out <- exp(fit_raw - 1.96 * se_raw)   
+    upr_out <- exp(fit_raw + 1.96 * se_raw)
   } else {
     fit_out <- fit_raw
-    lwr_out <- fit_raw - 1.645 * se_raw
-    upr_out <- fit_raw + 1.645 * se_raw
+    lwr_out <- fit_raw - 1.96 * se_raw
+    upr_out <- fit_raw + 1.96 * se_raw
   }
   
   newdata |>
     mutate(fit = fit_out, lwr = lwr_out, upr = upr_out, se = se_raw)
 }
 
+# ── Marginal Means Table Function ─────────────────────────────────────────────
+marginal_means <- function(model, group_var, group_levels,
+                           fixed_var, fixed_level,
+                           df_ref, key_days, key_labels, response_label,
+                           backtransform = FALSE) {
+  
+  pred_base <- tibble(
+    !!group_var := factor(group_levels, levels = levels(df_ref[[group_var]])),
+    !!fixed_var := factor(fixed_level,  levels = levels(df_ref[[fixed_var]])),
+    Culture = factor("Single", levels = levels(df_ref$Culture)),
+    Plot_ID = levels(df_ref$Plot_ID)[1],
+    Tree_ID = levels(df_ref$Tree_ID)[1]
+  )
+  
+  map2_dfr(key_days, key_labels, function(d, lbl) {
+    nd      <- pred_base |> mutate(days = d)
+    
+    preds   <- predict(model, newdata = nd, se.fit = TRUE,
+                       type = "response",
+                       exclude = c("s(Plot_ID)", "s(Tree_ID)"))
+    
+    fit_raw <- as.numeric(preds$fit)
+    se_raw  <- as.numeric(preds$se.fit)
+    
+    if (backtransform) {
+      fit_out <- exp(fit_raw + 0.5 * se_raw^2)
+      se_out  <- exp(fit_raw) * se_raw
+    } else {
+      fit_out <- fit_raw
+      se_out  <- se_raw
+    }
+    
+    nd |>
+      mutate(Response  = response_label,
+             Timepoint = lbl,
+             Mean      = round(fit_out, 3),
+             SE        = round(se_out, 3),
+             CI_lower  = round(Mean - 1.96 * SE, 3),
+             CI_upper  = round(Mean + 1.96 * SE, 3)) |>
+      select(Response, Timepoint, !!group_var, Mean, SE, CI_lower, CI_upper)
+  })
+}
 
-# ── All pairwise differences ───────────────────────────────────────────────────
-pairwise_diffs <- function(pred_grid, group_var) {
-  grp_levels <- if (is.factor(pred_grid[[group_var]])) {
-    levels(pred_grid[[group_var]])
-  } else {
-    unique(pred_grid[[group_var]])
-  }
+
+# ── Rigorous lpmatrix Time-Series Differences ─────────────────────────────────
+pairwise_diffs_rigorous <- function(model, df_ref, pred_grid, group_var, is_log_scale = FALSE) {
+  
+  grp_levels <- if (is.factor(pred_grid[[group_var]])) levels(pred_grid[[group_var]]) else unique(pred_grid[[group_var]])
   pairs <- combn(grp_levels, 2, simplify = FALSE)
+  
+  # Identify the fixed variable to hold constant
+  fixed_var <- ifelse(group_var == "Species", "Spacing_f", "Species")
+  fixed_level <- levels(df_ref[[fixed_var]])[1]
   
   map_dfr(pairs, function(pair) {
     lv1 <- pair[1]; lv2 <- pair[2]
     
-    g1 <- pred_grid |> filter(.data[[group_var]] == lv1) |>
-      group_by(days) |> summarise(fit = mean(fit), se = mean(se), .groups = "drop")
-    g2 <- pred_grid |> filter(.data[[group_var]] == lv2) |>
-      group_by(days) |> summarise(fit = mean(fit), se = mean(se), .groups = "drop")
+    # 1. Extract the pre-calculated means from your prediction grid
+    g1 <- pred_grid |> filter(.data[[group_var]] == lv1) |> arrange(days)
+    g2 <- pred_grid |> filter(.data[[group_var]] == lv2) |> arrange(days)
     
-    tibble(
-      comparison = paste0(lv1, " - ", lv2),
-      days       = g1$days,
-      diff       = g1$fit - g2$fit,
-      se_diff    = sqrt(g1$se^2 + g2$se^2),
-      lwr        = diff - 1.645 * se_diff,
-      upr        = diff + 1.645 * se_diff,
-      sig        = (lwr > 0) | (upr < 0)
-    )
+    # 2. Build explicit newdata frames for lpmatrix extraction
+    nd1 <- g1 |> mutate(!!fixed_var := factor(fixed_level, levels = levels(df_ref[[fixed_var]])),
+                        Plot_ID = levels(df_ref$Plot_ID)[1], Tree_ID = levels(df_ref$Tree_ID)[1])
+    
+    nd2 <- g2 |> mutate(!!fixed_var := factor(fixed_level, levels = levels(df_ref[[fixed_var]])),
+                        Plot_ID = levels(df_ref$Plot_ID)[1], Tree_ID = levels(df_ref$Tree_ID)[1])
+    
+    # 3. Extract lpmatrix (excluding plot/tree random effects)
+    X1 <- predict(model, newdata = nd1, type = "lpmatrix", exclude = c("s(Plot_ID)", "s(Tree_ID)"))
+    X2 <- predict(model, newdata = nd2, type = "lpmatrix", exclude = c("s(Plot_ID)", "s(Tree_ID)"))
+    
+    # 4. Covariance-aware standard error calculation
+    Xdiff <- X1 - X2
+    V     <- vcov(model, unconditional = TRUE) # unconditional accounts for smoothing parameter uncertainty
+    
+    # Calculate difference and SE strictly on the model's link scale
+    fit_link <- as.numeric(Xdiff %*% coef(model))
+    se_link  <- sqrt(rowSums((Xdiff %*% V) * Xdiff))
+    
+    # 95% CI on the link scale (using strict 1.96 multiplier)
+    lwr_link <- fit_link - 1.96 * se_link
+    upr_link <- fit_link + 1.96 * se_link
+    
+    if (is_log_scale) {
+      # For Crown & CA:H: Calculate absolute differences for the plot Y-axis
+      abs_diff <- g1$fit - g2$fit
+      
+      # Use Delta method approximation to map the CI ribbon to the absolute scale
+      se_abs  <- se_link * exp(fit_link)
+      lwr_abs <- abs_diff - 1.96 * se_abs
+      upr_abs <- abs_diff + 1.96 * se_abs
+      
+      # Significance (the red rug) MUST be judged mathematically on the link scale
+      sig <- (lwr_link > 0) | (upr_link < 0)
+      
+      tibble(comparison = paste0(lv1, " - ", lv2), days = g1$days,
+             diff = abs_diff, se_diff = se_abs, lwr = lwr_abs, upr = upr_abs, sig = sig)
+      
+    } else {
+      # For Height (raw scale): link scale is the absolute scale
+      tibble(comparison = paste0(lv1, " - ", lv2), days = g1$days,
+             diff = fit_link, se_diff = se_link, lwr = lwr_link, upr = upr_link, 
+             sig = (lwr_link > 0) | (upr_link < 0))
+    }
   })
 }
 
@@ -442,50 +521,6 @@ smooth_sig_table <- function(model, response_label) {
     mutate(edf = round(edf, 2), F = round(F, 3), p = sprintf("%.2e", p))
 }
 
-
-marginal_means <- function(model, group_var, group_levels,
-                           fixed_var, fixed_level,
-                           df_ref, key_days, key_labels, response_label,
-                           backtransform = FALSE) {
-  
-  pred_base <- tibble(
-    !!group_var := factor(group_levels, levels = levels(df_ref[[group_var]])),
-    !!fixed_var := factor(fixed_level,  levels = levels(df_ref[[fixed_var]])),
-    Culture = factor("Single", levels = levels(df_ref$Culture)),
-    Plot_ID = levels(df_ref$Plot_ID)[1],
-    Tree_ID = levels(df_ref$Tree_ID)[1]
-  )
-  
-  map2_dfr(key_days, key_labels, function(d, lbl) {
-    nd      <- pred_base |> mutate(days = d)
-    
-    preds   <- predict(model, newdata = nd, se.fit = TRUE,
-                       type = "response",
-                       exclude = c("s(Plot_ID)", "s(Tree_ID)"))
-    
-    fit_raw <- as.numeric(preds$fit)
-    se_raw  <- as.numeric(preds$se.fit)
-    
-    if (backtransform) {
-      fit_out <- exp(fit_raw + 0.5 * se_raw^2)
-      se_out  <- exp(fit_raw) * se_raw
-    } else {
-      fit_out <- fit_raw
-      se_out  <- se_raw
-    }
-    
-    nd |>
-      mutate(Response  = response_label,
-             Timepoint = lbl,
-             Mean      = round(fit_out, 3),
-             SE        = round(se_out, 3),
-             CI_lower  = round(Mean - 1.645 * SE, 3),
-             CI_upper  = round(Mean + 1.645 * SE, 3)) |>
-      select(Response, Timepoint, !!group_var, Mean, SE, CI_lower, CI_upper)
-  })
-}
-
-
 pairwise_at_day <- function(diff_df, target_day, response_label, factor_label) {
   diff_df |>
     filter(abs(days - target_day) == min(abs(days - target_day))) |>
@@ -557,12 +592,12 @@ make_spacing_grid <- function(days_seq, df_ref) {
     )
 }
 
-# =============================================================================
+# ──────────────────────────────────────────────────────────────────────────────
 # ── FIT MODELS ────────────────────────────────────────────────────────────────
 # All three responses: Gaussian family (log-scale for Crown and CA:H)
 # If models already in memory, skip to PREDICTION GRIDS
 # Expected runtime: ~5-10 min per model pair (~30 min total)
-# =============================================================================
+# ──────────────────────────────────────────────────────────────────────────────
 
 cat("══ RESPONSE 1: Calibrated Height (Gaussian, raw scale) ════════════════\n")
 models_h <- fit_gamm_pair(df_h, "Height")
@@ -588,18 +623,18 @@ print(summary(models_r$species))
 cat("\n── CA:H spacing model summary ───────────────────────────────────────\n")
 print(summary(models_r$spacing))
 
-# =============================================================================
+# ──────────────────────────────────────────────────────────────────────────────
 # MODEL DIAGNOSTICS
-# =============================================================================
+# ──────────────────────────────────────────────────────────────────────────────
 
 cat("\n")
 cat("=====================================================\n")
 cat("MODEL DIAGNOSTICS\n")
 cat("=====================================================\n")
 
-# -----------------------------------------------------------------------------
+# ──────────────────────────────────────────────────────────────────────────────
 # Helper: run gam.check() and save output
-# -----------------------------------------------------------------------------
+# ──────────────────────────────────────────────────────────────────────────────
 
 save_gam_check <- function(model, model_name, output_dir) {
   
@@ -625,9 +660,9 @@ save_gam_check <- function(model, model_name, output_dir) {
   invisible(txt_file)
 }
 
-# -----------------------------------------------------------------------------
+# ──────────────────────────────────────────────────────────────────────────────
 # Run and save GAM checks
-# -----------------------------------------------------------------------------
+# ──────────────────────────────────────────────────────────────────────────────
 
 save_gam_check(
   models_h$species,
@@ -669,9 +704,9 @@ cat("\n")
 cat("All GAM diagnostic reports saved.\n")
 cat("=====================================================\n")
 
-# =============================================================================
+# ──────────────────────────────────────────────────────────────────────────────
 # ── PREDICTION GRIDS ──────────────────────────────────────────────────────────
-# =============================================================================
+# ──────────────────────────────────────────────────────────────────────────────
 
 days_h <- seq(min(df_h$days), max(df_h$days), length.out = 300)
 days_c <- seq(min(df_c$days), max(df_c$days), length.out = 300)
@@ -694,13 +729,15 @@ grid_r_sc_pred <- predict_traj(models_r$spacing, make_full_grid(days_r, df_r),
                                backtransform = TRUE)
 
 # Pairwise differences
-cat("Computing pairwise differences...\n")
-sp_diffs_h <- pairwise_diffs(grid_h_sp_pred, "Species")
-sc_diffs_h <- pairwise_diffs(grid_h_sc_pred, "Spacing_f")
-sp_diffs_c <- pairwise_diffs(grid_c_sp_pred, "Species")
-sc_diffs_c <- pairwise_diffs(grid_c_sc_pred, "Spacing_f")
-sp_diffs_r <- pairwise_diffs(grid_r_sp_pred, "Species")
-sc_diffs_r <- pairwise_diffs(grid_r_sc_pred, "Spacing_f")
+cat("Computing rigorous covariance-aware pairwise differences...\n")
+sp_diffs_h <- pairwise_diffs_rigorous(models_h$species, df_h, grid_h_sp_pred, "Species", is_log_scale = FALSE)
+sc_diffs_h <- pairwise_diffs_rigorous(models_h$spacing, df_h, grid_h_sc_pred, "Spacing_f", is_log_scale = FALSE)
+
+sp_diffs_c <- pairwise_diffs_rigorous(models_c$species, df_c, grid_c_sp_pred, "Species", is_log_scale = TRUE)
+sc_diffs_c <- pairwise_diffs_rigorous(models_c$spacing, df_c, grid_c_sc_pred, "Spacing_f", is_log_scale = TRUE)
+
+sp_diffs_r <- pairwise_diffs_rigorous(models_r$species, df_r, grid_r_sp_pred, "Species", is_log_scale = TRUE)
+sc_diffs_r <- pairwise_diffs_rigorous(models_r$spacing, df_r, grid_r_sc_pred, "Spacing_f", is_log_scale = TRUE)
 
 cat("\nRange checks (all should be non-zero):\n")
 cat("Height   species:", round(range(sp_diffs_h$diff), 3), "\n")
@@ -721,11 +758,11 @@ curve_r_sp <- predict_traj(models_r$species, make_species_grid(days_r, df_r), ba
 curve_r_sc <- predict_traj(models_r$spacing, make_spacing_grid(days_r, df_r), backtransform = TRUE)
 
 
-# =============================================================================
+# ──────────────────────────────────────────────────────────────────────────────
 # ── PLOTS ─────────────────────────────────────────────────────────────────────
-# =============================================================================
+# ──────────────────────────────────────────────────────────────────────────────
 
-# =============================================================================
+# ──────────────────────────────────────────────────────────────────────────────
 # ── FIGURE CAPTION REFERENCE (Former Titles & Subtitles) ──────────────────────
 # Use these to draft your Word document figure captions.
 #
@@ -750,7 +787,7 @@ curve_r_sc <- predict_traj(models_r$spacing, make_spacing_grid(days_r, df_r), ba
 # ── COMBINED 3x2 GRID ─────────────────────────────────────────────────────────
 #   Title:    GAMM-Fitted Growth Trajectories
 #   Subtitle: Left column: Species-controlled  |  Right column: Spacing-controlled
-# =============================================================================
+# ──────────────────────────────────────────────────────────────────────────────
 
 cat("\nGenerating plots...\n")
 
@@ -829,26 +866,43 @@ p_r_sc_curves <- curve_plot(curve_r_sc, "Spacing_f", spacing_colors,
 ggsave(file.path(OUTPUT_DIR, "cah_curves_spacing.png"), p_r_sc_curves,
        width = 6.30, height = 3.2, units = "in", dpi = 300)
 
-# ── SIGNIFICANCE LABELS (DAY 266) ─────────────────────────────────────────────
-
-attach_labels <- function(curve_df, group_var, letters_vector, y_positions) {
+# ── AUTOMATED LABEL FUNCTION ──────────────────────────────────────────────────
+attach_labels_auto <- function(curve_df, diff_df, group_var, target_day, y_positions) {
   
+  # 1. Isolate the pairwise differences for the final day
+  day_data <- diff_df |>
+    filter(abs(days - target_day) == min(abs(days - target_day))) |>
+    slice(1, .by = comparison)
+  
+  # 2. Create a logical vector of significance
+  is_diff <- (day_data$lwr > 0) | (day_data$upr < 0)
+  names(is_diff) <- gsub(" - ", "-", day_data$comparison)
+  
+  # 3. Generate the automated letters
+  cld <- multcompView::multcompLetters(is_diff)$Letters
+  letters_df <- tibble(
+    !!group_var := names(cld),
+    letter = as.character(cld)
+  )
+  
+  # 4. Attach the letters to the endpoints of your curves
   curve_df |>
     filter(days == max(days)) |>
-    arrange(desc(fit)) |>
-    mutate(
-      letter = letters_vector,
-      y_lab  = y_positions
-    ) |>
+    arrange(desc(fit)) |> 
+    left_join(letters_df, by = group_var) |>
+    mutate(y_lab = y_positions) |>
     select(days, fit, y_lab, all_of(group_var), letter)
 }
 
+# ── SIGNIFICANCE LABELS (DAY 266) ─────────────────────────────────────────────
+
 # 1. HEIGHT LABELS
-lbl_h_sp <- attach_labels(
-  curve_h_sp,
-  "Species",
-  c("a", "a", "b", "bc", "c"),
-  c(4.1, 3.80, 3.5, 3.2, 2.85)
+lbl_h_sp <- attach_labels_auto(
+  curve_df    = curve_h_sp,
+  diff_df     = sp_diffs_h,
+  group_var   = "Species",
+  target_day  = 266,
+  y_positions = c(4.1, 3.80, 3.5, 3.2, 2.85)
 )
 
 p_h_sp_curves <- p_h_sp_curves +
@@ -867,11 +921,12 @@ p_h_sp_curves <- p_h_sp_curves +
     show.legend = FALSE
   )
 
-lbl_h_sc <- attach_labels(
-  curve_h_sc,
-  "Spacing_f",
-  c("a", "ab", "bc", "c"),
-  c(4.5, 4.2, 3.9, 3.6)
+lbl_h_sc <- attach_labels_auto(
+  curve_df    = curve_h_sc,
+  diff_df     = sc_diffs_h,
+  group_var   = "Spacing_f",
+  target_day  = 266,
+  y_positions = c(4.5, 4.2, 3.9, 3.6)
 )
 
 p_h_sc_curves <- p_h_sc_curves +
@@ -891,11 +946,12 @@ p_h_sc_curves <- p_h_sc_curves +
   )
 
 # 2. CROWN AREA LABELS
-lbl_c_sp <- attach_labels(
-  curve_c_sp,
-  "Species",
-  c("a", "a", "b", "bc", "c"),
-  c(1.0, 0.92, 0.84, 0.76, 0.68)
+lbl_c_sp <- attach_labels_auto(
+  curve_df    = curve_c_sp,
+  diff_df     = sp_diffs_c,
+  group_var   = "Species",
+  target_day  = 266,
+  y_positions = c(1.0, 0.92, 0.84, 0.76, 0.68)
 )
 
 p_c_sp_curves <- p_c_sp_curves +
@@ -914,11 +970,12 @@ p_c_sp_curves <- p_c_sp_curves +
     show.legend = FALSE
   )
 
-lbl_c_sc <- attach_labels(
-  curve_c_sc,
-  "Spacing_f",
-  c("a", "ab", "b", "c"),
-  c(2.35, 2.1, 1.8, 1.5)
+lbl_c_sc <- attach_labels_auto(
+  curve_df    = curve_c_sc,
+  diff_df     = sc_diffs_c,
+  group_var   = "Spacing_f",
+  target_day  = 266,
+  y_positions = c(2.35, 2.1, 1.8, 1.5)
 )
 
 p_c_sc_curves <- p_c_sc_curves +
@@ -938,11 +995,12 @@ p_c_sc_curves <- p_c_sc_curves +
   )
 
 # 3. CA:H RATIO LABELS
-lbl_r_sp <- attach_labels(
-  curve_r_sp,
-  "Species",
-  c("a", "a", "b", "bc", "c"),
-  c(0.31, 0.29, 0.27, 0.25, 0.22)
+lbl_r_sp <- attach_labels_auto(
+  curve_df    = curve_r_sp,
+  diff_df     = sp_diffs_r,
+  group_var   = "Species",
+  target_day  = 266,
+  y_positions = c(0.31, 0.29, 0.27, 0.25, 0.22)
 )
 
 p_r_sp_curves <- p_r_sp_curves +
@@ -961,11 +1019,12 @@ p_r_sp_curves <- p_r_sp_curves +
     show.legend = FALSE
   )
 
-lbl_r_sc <- attach_labels(
-  curve_r_sc,
-  "Spacing_f",
-  c("a", "ab", "b", "c"),
-  c(0.58, 0.52, 0.46, 0.40)
+lbl_r_sc <- attach_labels_auto(
+  curve_df    = curve_r_sc,
+  diff_df     = sc_diffs_r,
+  group_var   = "Spacing_f",
+  target_day  = 266,
+  y_positions = c(0.58, 0.52, 0.46, 0.40)
 )
 
 p_r_sc_curves <- p_r_sc_curves +
@@ -1027,9 +1086,9 @@ p_combined_3x2 <- (h_sp_3x2 | h_sc_3x2) /
 ggsave(file.path(OUTPUT_DIR, "combined_3x2_curves.png"), p_combined_3x2,
        width = 6.30, height = 6.5, units = "in", dpi = 300)
 
-# =============================================================================
+# ──────────────────────────────────────────────────────────────────────────────
 # ── STATISTICS SUMMARY TABLES ─────────────────────────────────────────────────
-# =============================================================================
+# ──────────────────────────────────────────────────────────────────────────────
 
 cat("\nGenerating statistics tables...\n")
 
@@ -1140,9 +1199,9 @@ for (resp in c("Height (m)", "Crown Area (m2)", "CA:H Ratio (m2 m-1)")) {
 }
 
 
-# =============================================================================
+# ──────────────────────────────────────────────────────────────────────────────
 # ── DIAGNOSTICS ───────────────────────────────────────────────────────────────
-# =============================================================================
+# ──────────────────────────────────────────────────────────────────────────────
 
 cat("\n── k adequacy checks ────────────────────────────────────────────────\n")
 model_list <- list(
