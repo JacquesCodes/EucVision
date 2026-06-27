@@ -198,8 +198,8 @@ moran_results <- moran_results %>%
     Response = factor(Response,
                       levels = c("Height", "Crown Area", "CA:H Ratio"),
                       labels = c("Calibrated height (m)",
-                                 "Crown area (m2)",
-                                 "CA:H ratio (m2 m-1)")),
+                                 "Crown area (m\u00b2)",
+                                 "CA:H ratio (m\u00b2 m\u207b\u00b9)")),
     Model = factor(Model, levels = c("Species", "Spacing"))
   )
 
@@ -286,9 +286,9 @@ make_moran_panel <- function(data, response_label, keep_x = FALSE) {
     geom_line(linewidth = 0.8) +
     geom_point(size = 1.8, shape = 16) +
     
-    geom_point(data = df_panel %>% filter(Significant),
-               aes(x = days, y = Moran_I_Stat),
-               shape = 1, size = 3.5, stroke = 0.8, colour = "#CC0000") +
+    # geom_point(data = df_panel %>% filter(Significant),
+    #            aes(x = days, y = Moran_I_Stat),
+    #            shape = 1, size = 3.5, stroke = 0.8, colour = "#CC0000") +
     
     scale_colour_manual(values = model_line_colors, name = "Model") +
     
