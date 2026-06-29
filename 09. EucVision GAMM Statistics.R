@@ -109,7 +109,7 @@ INCLUDE_SPECIES <- c(
 )
 
 # Toggle between "All" (whole population) and "Dominant" (top 20% by height)
-POPULATION_SUBSET <- "ALL"
+POPULATION_SUBSET <- "All"
 
 # Human-readable label for plot subtitles and filenames
 POPULATION_LABEL <- if (POPULATION_SUBSET == "Dominant") {
