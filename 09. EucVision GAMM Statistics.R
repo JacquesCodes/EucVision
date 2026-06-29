@@ -1,5 +1,6 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # GAMM — Calibrated Height, Crown Area & Crown:Height Ratio
+# ──────────────────────────────────────────────────────────────────────────────
 # Eucalyptus species × spacing trial | EucVision, IMPACT OAL, Stellenbosch
 #
 # Time series: 1 September 2025 onwards (t0 = 2025-09-01)
@@ -83,7 +84,7 @@ tic("Model Starts")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# OUTPUT SETTINGS
+# OUTPUT SETTINGS ####
 # ──────────────────────────────────────────────────────────────────────────────
 
 OUTPUT_DIR <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/10. GAMM"
@@ -93,7 +94,7 @@ if (!dir.exists(OUTPUT_DIR)) {
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
-# ANALYSIS SETTINGS
+# ANALYSIS SETTINGS ####
 # ──────────────────────────────────────────────────────────────────────────────
 
 BASELINE_SPECIES <- "Grandis"
@@ -108,7 +109,14 @@ INCLUDE_SPECIES <- c(
 )
 
 # Toggle between "All" (whole population) and "Dominant" (top 20% by height)
-POPULATION_SUBSET <- "All" 
+POPULATION_SUBSET <- "ALL"
+
+# Human-readable label for plot subtitles and filenames
+POPULATION_LABEL <- if (POPULATION_SUBSET == "Dominant") {
+  "Dominant trees (top 20% by height)"
+} else {
+  "Full population"
+}
 
 cat("\n")
 cat("=====================================================\n")
@@ -185,7 +193,7 @@ df_r <- df_base |>
 df_h$Species <- relevel(df_h$Species, ref = BASELINE_SPECIES)
 df_c$Species <- relevel(df_c$Species, ref = BASELINE_SPECIES)
 df_r$Species <- relevel(df_r$Species, ref = BASELINE_SPECIES)
-
+# Use 1m by 1m as base reference
 df_h$Spacing_f <- relevel(df_h$Spacing_f, ref = BASELINE_SPACING)
 df_c$Spacing_f <- relevel(df_c$Spacing_f, ref = BASELINE_SPACING)
 df_r$Spacing_f <- relevel(df_r$Spacing_f, ref = BASELINE_SPACING)
@@ -233,7 +241,7 @@ spacing_display <- c(
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# ── SHARED FUNCTIONS ──────────────────────────────────────────────────────────
+# SHARED FUNCTIONS ####
 # ──────────────────────────────────────────────────────────────────────────────
 
 # ── Fit a pair of GAMMs (all three responses use gaussian() ) ─────────────────
@@ -508,29 +516,6 @@ plot_diffs <- function(diff_df, y_label, fill_col = "steelblue", ncol = 3,
       plot.subtitle = element_text(size = 7.5, colour = "grey40", margin = margin(b = 3))
     )
 }
-  
-  # ── Build main panel (9 comparisons, shared Y) ────────────────────────────
-  p_main <- make_base(df_main, free_y = FALSE) +
-    labs(title = title, subtitle = subtitle,
-         x = if (!is.null(df_outlier)) "" else "Days from 1 September 2025") +
-    theme(
-      axis.title.x = if (!is.null(df_outlier)) element_blank() else element_text(),
-      axis.text.x  = if (!is.null(df_outlier)) element_blank() else element_text(),
-      axis.ticks.x = if (!is.null(df_outlier)) element_blank() else element_line()
-    )
-  
-  # ── If no outlier, return main plot directly ───────────────────────────────
-  if (is.null(df_outlier)) return(p_main)
-  
-  # ── Build outlier panel (1 comparison, its own Y) ─────────────────────────
-  p_outlier <- make_base(df_outlier, free_y = TRUE) +
-    labs(title = NULL, subtitle = NULL,
-         x = "Days from 1 September 2025", y = y_label)
-  
-  # ── Stack with patchwork: 9 panels tall, 1 panel below ────────────────────
-  p_main / p_outlier +
-    plot_layout(heights = c(3, 1))
-}
 
 # ── Statistics helpers ────────────────────────────────────────────────────────
 smooth_sig_table <- function(model, response_label) {
@@ -622,7 +607,8 @@ make_spacing_grid <- function(days_seq, df_ref) {
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
-# ── FIT MODELS ────────────────────────────────────────────────────────────────
+# FIT MODELS ####
+# ──────────────────────────────────────────────────────────────────────────────
 # All three responses: Gaussian family (log-scale for Crown and CA:H)
 # If models already in memory, skip to PREDICTION GRIDS
 # Expected runtime: ~5-10 min per model pair (~30 min total)
@@ -653,7 +639,7 @@ cat("\n── CA:H spacing model summary ─────────────
 print(summary(models_r$spacing))
 
 # ──────────────────────────────────────────────────────────────────────────────
-# MODEL DIAGNOSTICS
+# MODEL DIAGNOSTICS ####
 # ──────────────────────────────────────────────────────────────────────────────
 
 cat("\n")
@@ -662,7 +648,7 @@ cat("MODEL DIAGNOSTICS\n")
 cat("=====================================================\n")
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Helper: run gam.check() and save output
+# Helper: run gam.check() and save output 
 # ──────────────────────────────────────────────────────────────────────────────
 
 save_gam_check <- function(model, model_name, output_dir) {
@@ -734,7 +720,7 @@ cat("All GAM diagnostic reports saved.\n")
 cat("=====================================================\n")
 
 # ──────────────────────────────────────────────────────────────────────────────
-# ── PREDICTION GRIDS ──────────────────────────────────────────────────────────
+#  PREDICTION GRIDS ####
 # ──────────────────────────────────────────────────────────────────────────────
 
 days_h <- seq(min(df_h$days), max(df_h$days), length.out = 300)
@@ -785,34 +771,7 @@ curve_r_sc <- predict_traj(models_r$spacing, make_spacing_grid(days_r, df_r), ba
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# ── PLOTS ─────────────────────────────────────────────────────────────────────
-# ──────────────────────────────────────────────────────────────────────────────
-
-# ──────────────────────────────────────────────────────────────────────────────
-# ── FIGURE CAPTION REFERENCE (Former Titles & Subtitles) ──────────────────────
-# Use these to draft your Word document figure captions.
-#
-# ── DIFFERENCE PLOTS ──────────────────────────────────────────────────────────
-# Species Pairwise Differences
-#   Title:    Species pairwise [height / crown area / crown:height ratio] differences
-#   Subtitle: Shaded = 95% CI  |  Red rug = significant period  |  Averaged over spacings
-#
-# Spacing Pairwise Differences
-#   Title:    Spacing pairwise [height / crown area / crown:height ratio] differences
-#   Subtitle: Shaded = 95% CI  |  Red rug = significant period  |  Averaged over species
-#
-# ── SINGLE CURVE PLOTS ────────────────────────────────────────────────────────
-# Species Trajectories
-#   Title:    GAMM-fitted [height / crown area / crown:height ratio] growth trajectories by species
-#   Subtitle: Population mean, spacing controlled  |  Shaded = 95% CI
-#
-# Spacing Trajectories
-#   Title:    GAMM-fitted [height / crown area / crown:height ratio] growth trajectories by spacing
-#   Subtitle: Population mean, species controlled  |  Shaded = 95% CI
-#
-# ── COMBINED 3x2 GRID ─────────────────────────────────────────────────────────
-#   Title:    GAMM-Fitted Growth Trajectories
-#   Subtitle: Left column: Species-controlled  |  Right column: Spacing-controlled
+# PLOTS ####
 # ──────────────────────────────────────────────────────────────────────────────
 
 cat("\nGenerating plots...\n")
@@ -822,13 +781,15 @@ p_h_sp_diff <- plot_diffs(sp_diffs_h,
                           y_label  = "Difference in height (m)",
                           fill_col = "steelblue", ncol = 3,
                           title    = "Species pairwise height differences",
-                          subtitle = "Shaded = 95% CI  |  Red rug = significant period  |  Averaged over spacings")
+                          subtitle = paste0(POPULATION_LABEL, " | At 1\u00d71m spacing | Shaded = 95% CI | Red rug = significant period"))
+ggsave(file.path(OUTPUT_DIR, "height_species_differences.png"), p_h_sp_diff,
+       width = 6.30, height = 5.5, units = "in", dpi = 300)
 
 p_h_sc_diff <- plot_diffs(sc_diffs_h,
                           y_label  = "Difference in height (m)",
                           fill_col = "darkorange", ncol = 3,
                           title    = "Spacing pairwise height differences",
-                          subtitle = "Shaded = 95% CI  |  Red rug = significant period  |  Averaged over species")
+                          subtitle = paste0(POPULATION_LABEL, " | Grandis baseline | Shaded = 95% CI | Red rug = significant period"))
 ggsave(file.path(OUTPUT_DIR, "height_spacing_differences.png"), p_h_sc_diff,
        width = 6.30, height = 3.0, units = "in", dpi = 300)
 
@@ -837,21 +798,21 @@ p_h_sp_curves <- curve_plot(curve_h_sp, "Species", species_colors,
                             legend_title  = "Species",
                             y_label       = "Calibrated height (m)",
                             title         = "GAMM-fitted height growth trajectories by species",
-                            subtitle      = "Population mean, spacing controlled  |  Shaded = 95% CI")
+                            subtitle = paste0(POPULATION_LABEL, " | At 1\u00d71m spacing | Shaded = 95% CI"))
 
 p_h_sc_curves <- curve_plot(curve_h_sc, "Spacing_f", spacing_colors,
                             colour_labels = spacing_display,
                             legend_title  = "Spacing",
                             y_label       = "Calibrated height (m)",
                             title         = "GAMM-fitted height growth trajectories by spacing",
-                            subtitle      = "Population mean, species controlled  |  Shaded = 95% CI")
+                            subtitle = paste0(POPULATION_LABEL, " | Grandis baseline | Shaded = 95% CI"))
 
 # ── CROWN AREA plots ──────────────────────────────────────────────────────────
 p_c_sp_diff <- plot_diffs(sp_diffs_c,
                           y_label  = "Difference in crown area (m\u00b2)",
                           fill_col = "#1b9e77", ncol = 3,
                           title    = "Species pairwise crown area differences",
-                          subtitle = "Shaded = 95% CI  |  Red rug = significant period  |  Averaged over spacings")
+                          subtitle = paste0(POPULATION_LABEL, " | At 1\u00d71m spacing | Shaded = 95% CI | Red rug = significant period"))
 ggsave(file.path(OUTPUT_DIR, "crown_species_differences.png"), p_c_sp_diff,
        width = 6.30, height = 5.5, units = "in", dpi = 300)
 
@@ -859,7 +820,7 @@ p_c_sc_diff <- plot_diffs(sc_diffs_c,
                           y_label  = "Difference in crown area (m\u00b2)",
                           fill_col = "#d95f02", ncol = 3,
                           title    = "Spacing pairwise crown area differences",
-                          subtitle = "Shaded = 95% CI  |  Red rug = significant period  |  Averaged over species")
+                          subtitle = paste0(POPULATION_LABEL, " | Grandis baseline | Shaded = 95% CI | Red rug = significant period"))
 ggsave(file.path(OUTPUT_DIR, "crown_spacing_differences.png"), p_c_sc_diff,
        width = 6.30, height = 3.0, units = "in", dpi = 300)
 
@@ -868,21 +829,21 @@ p_c_sp_curves <- curve_plot(curve_c_sp, "Species", species_colors,
                             legend_title  = "Species",
                             y_label       = "Crown area (m\u00b2)",
                             title         = "GAMM-fitted crown area growth trajectories by species",
-                            subtitle      = "Population mean, spacing controlled  |  Shaded = 95% CI")
+                            subtitle = paste0(POPULATION_LABEL, " | At 1\u00d71m spacing | Shaded = 95% CI"))
 
 p_c_sc_curves <- curve_plot(curve_c_sc, "Spacing_f", spacing_colors,
                             colour_labels = spacing_display,
                             legend_title  = "Spacing",
                             y_label       = "Crown area (m\u00b2)",
                             title         = "GAMM-fitted crown area growth trajectories by spacing",
-                            subtitle      = "Population mean, species controlled  |  Shaded = 95% CI")
+                            subtitle = paste0(POPULATION_LABEL, " | Grandis baseline | Shaded = 95% CI"))
 
 # ── CA:H RATIO plots ──────────────────────────────────────────────────────────
 p_r_sp_diff <- plot_diffs(sp_diffs_r,
                           y_label  = "Difference in CA:H ratio (m\u00b2 m\u207b\u00b9)",
                           fill_col = "#6a3d9a", ncol = 3,
                           title    = "Species pairwise CA:H ratio differences",
-                          subtitle = "Shaded = 95% CI  |  Red rug = significant period  |  Averaged over spacings")
+                          subtitle = paste0(POPULATION_LABEL, " | At 1\u00d71m spacing | Shaded = 95% CI | Red rug = significant period"))
 ggsave(file.path(OUTPUT_DIR, "cah_species_differences.png"), p_r_sp_diff,
        width = 6.30, height = 5.5, units = "in", dpi = 300)
 
@@ -890,7 +851,7 @@ p_r_sc_diff <- plot_diffs(sc_diffs_r,
                           y_label  = "Difference in CA:H ratio (m\u00b2 m\u207b\u00b9)",
                           fill_col = "#e31a1c", ncol = 3,
                           title    = "Spacing pairwise CA:H ratio differences",
-                          subtitle = "Shaded = 95% CI  |  Red rug = significant period  |  Averaged over species")
+                          subtitle = paste0(POPULATION_LABEL, " | Grandis baseline | Shaded = 95% CI | Red rug = significant period"))
 ggsave(file.path(OUTPUT_DIR, "cah_spacing_differences.png"), p_r_sc_diff,
        width = 6.30, height = 3.0, units = "in", dpi = 300)
 
@@ -899,14 +860,14 @@ p_r_sp_curves <- curve_plot(curve_r_sp, "Species", species_colors,
                             legend_title  = "Species",
                             y_label       = "CA:H ratio (m\u00b2 m\u207b\u00b9)",
                             title         = "GAMM-fitted CA:H ratio trajectories by species",
-                            subtitle      = "Population mean, spacing controlled  |  Shaded = 95% CI")
+                            subtitle = paste0(POPULATION_LABEL, " | At 1\u00d71m spacing | Shaded = 95% CI"))
 
 p_r_sc_curves <- curve_plot(curve_r_sc, "Spacing_f", spacing_colors,
                             colour_labels = spacing_display,
                             legend_title  = "Spacing",
                             y_label       = "CA:H ratio (m\u00b2 m\u207b\u00b9)",
                             title         = "GAMM-fitted CA:H ratio trajectories by spacing",
-                            subtitle      = "Population mean, species controlled  |  Shaded = 95% CI")
+                            subtitle = paste0(POPULATION_LABEL, " | Grandis baseline | Shaded = 95% CI"))
 
 # ── AUTOMATED LABEL FUNCTION ──────────────────────────────────────────────────
 attach_labels_auto <- function(curve_df, diff_df, group_var, target_day, y_positions) {
@@ -1145,8 +1106,8 @@ p_combined_3x2 <- (c_sp_3x2 | c_sc_3x2) /
   (h_sp_3x2   | h_sc_3x2)   /
   (r_sp_3x2   | r_sc_3x2)   +
   plot_annotation(
-    title    = "GAMM-fitted tree growth trajectories by species and spacing",
-    subtitle = "Left column: spacing-controlled | Right column: species-controlled | Shaded = 95% CI",
+    title = paste0("GAMM-fitted growth trajectories \u2014 ", POPULATION_LABEL),
+    subtitle = "Left: by species (at 1×1m spacing)  |  Right: by spacing (Grandis baseline)",
     theme = theme(
       plot.title = element_text(
         size   = 10,
@@ -1168,7 +1129,7 @@ ggsave(file.path(OUTPUT_DIR, "combined_3x2_curves.png"), p_combined_3x2,
        width = 6.30, height = 6.7, units = "in", dpi = 300)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# ── STATISTICS SUMMARY TABLES ─────────────────────────────────────────────────
+# STATISTICS SUMMARY TABLES ####
 # ──────────────────────────────────────────────────────────────────────────────
 
 cat("\nGenerating statistics tables...\n")
