@@ -40,7 +40,7 @@ pure_epsg_2048_wkt <- 'PROJCS["Hartebeesthoek94 / Lo19",GEOGCS["Hartebeesthoek94
 # ──────────────────────────────────────────────────────────────────────────────
 # === CONFIGURE PATHS ===
 # Change this single variable for each new batch!
-date_folder <- "07. December 2025 (TLS)"
+date_folder <- "30. 30 June 2026 (ALS)"
 
 # Extract the date part and create a safe filename format
 # (e.g., "17. 02 March 2026" -> "02_March_2026")

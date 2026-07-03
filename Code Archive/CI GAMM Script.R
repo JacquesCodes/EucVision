@@ -64,6 +64,10 @@ library(sf)
 library(tictoc)
 library(ggrepel)
 library(multcompView)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(zoo)
 
 # Add Calibri font
 windowsFonts(Calibri = windowsFont("Calibri"))
@@ -98,7 +102,7 @@ if (!dir.exists(OUTPUT_DIR)) {
 # ──────────────────────────────────────────────────────────────────────────────
 
 BASELINE_SPECIES <- "Grandis"
-BASELINE_SPACING <- "1x1m"
+BASELINE_SPACING <- "2x2m"
 
 INCLUDE_SPECIES <- c(
   "Grandis",
@@ -129,7 +133,23 @@ cat("\nBaseline species:", BASELINE_SPECIES, "\n")
 cat("Baseline spacing:", BASELINE_SPACING, "\n")
 cat("=====================================================\n\n")
 
-# ── 1. Load & clean data ──────────────────────────────────────────────────────
+# ── 1. Extract STATIC Coordinates from Shapefile ──────────────────────────
+
+shp_path <- "E:/Remote Sensing Media/02. 01 September 2025/09. Crown Metrics/Crown_Metrics_01_September_2025.shp"
+crowns_sf <- st_read(shp_path)
+
+# Extract ONLY Tree_ID, X, and Y
+tree_coords <- crowns_sf %>%
+  mutate(
+    X = st_coordinates(st_centroid(geometry))[,1],
+    Y = st_coordinates(st_centroid(geometry))[,2]
+  ) %>%
+  st_drop_geometry() %>%
+  mutate(Tree_ID = paste(Cmprtmn, Line, Plot, Tree, sep="_")) %>%
+  select(Tree_ID, X, Y)
+
+
+# ── 2. Create the Time Series (df_base) and Merge Coordinates ─────────────
 
 # Define the dates where Crown Area polygons were borrowed
 borrowed_dates <- as.Date(c("2025-11-14", "2026-03-16", "2026-04-08", 
@@ -145,19 +165,13 @@ df_base <- df_raw |>
     Crown_Area_m2 = if_else(Date %in% borrowed_dates, NA_real_, Crown_Area_m2),
     t0        = as.Date("2025-09-01"),
     days      = as.numeric(Date - t0),
+    Species   = factor(Species),
     
-    # Define the exact order right here!
-    Species   = factor(Species, levels = c(
-      "Grandis",       # Baseline (Column 1)
-      "Cladocalyx", 
-      "Cloeziana", 
-      "Urophylla", 
-      "Grandis clone"  # Bottom row
-    )),
-    
-    Spacing_f = factor(Spacing,
-                       levels = c(1, 2, 3, 5),
+    # Robust Spacing Mapping
+    Spacing_f = factor(as.numeric(Spacing), 
+                       levels = c(1, 2, 3, 5), 
                        labels = c("1x1m", "2x2m", "3x3m", "5x5m")),
+    
     Culture   = factor(Culture),
     Plot_ID   = factor(paste0(Compartment, "_", Plot)),
     Tree_ID   = factor(Tree_ID)
@@ -165,6 +179,94 @@ df_base <- df_raw |>
   filter(Death_Date == "Alive") |>
   filter(Date >= as.Date("2025-09-01")) |>
   filter(Culture == "Single")
+
+# Merge the static shapefile coordinates into the dynamic time-series
+df_base <- df_base %>%
+  left_join(tree_coords, by = "Tree_ID") %>%
+  # Drop any trees that didn't have coordinates in the shapefile
+  filter(!is.na(X) & !is.na(Y))
+
+df_base <- df_base %>%
+  mutate(
+    Tree_ID   = factor(Tree_ID),
+    Plot_ID   = factor(Plot_ID),
+    Species   = factor(Species),
+    Spacing_f = factor(Spacing_f)
+  )
+
+# ── 3. Define the Dynamic CI Function (Middle Trees Only) ─────────────────
+
+middle_trees_1m <- c(4.4, 4.5, 4.6, 4.7, 4.8, 4.9, 4.1, 4.11, 4.12, 4.13, 4.14, 4.15, 4.16, 4.17, 4.18, 4.19, 4.2, 4.21, 4.22, 4.23, 4.24, 4.25, 4.26, 4.27, 4.28)
+middle_trees_2m <- c(4.4, 4.5, 4.6, 4.7, 4.8, 4.9, 4.1, 4.11, 4.12, 4.13,
+                     5.4, 5.5, 5.6, 5.7, 5.8, 5.9, 5.1, 5.11, 5.12, 5.13,
+                     6.4, 6.5, 6.6, 6.7, 6.8, 6.9, 6.1, 6.11, 6.12, 6.13,
+                     7.4, 7.5, 7.6, 7.7, 7.8, 7.9, 7.1, 7.11, 7.12, 7.13)
+middle_trees_3m <- c(4.4, 4.5, 4.6, 4.7, 4.8)
+middle_trees_5m <- c(4.4, 5.4, 6.4, 7.4)
+
+compute_plot_ci <- function(plot_df) {
+  plot_spacing <- as.numeric(plot_df$Spacing[1])
+  search_radius <- 1.5 * plot_spacing
+  
+  if (plot_spacing == 1) { target_trees <- middle_trees_1m }
+  else if (plot_spacing == 2) { target_trees <- middle_trees_2m }
+  else if (plot_spacing == 3) { target_trees <- middle_trees_3m }
+  else if (plot_spacing == 5) { target_trees <- middle_trees_5m }
+  else { target_trees <- unique(plot_df$Tree) } 
+  
+  subject_df <- plot_df %>% 
+    filter(round(as.numeric(Tree), 2) %in% target_trees)
+  
+  distances <- subject_df %>%
+    select(Subject_ID = Tree_ID, Sub_X = X, Sub_Y = Y, Sub_CA = Crown_Area_m2, Sub_H = Calibrated_Height_m) %>%
+    cross_join(
+      plot_df %>% select(Neigh_ID = Tree_ID, Neigh_X = X, Neigh_Y = Y, Neigh_CA = Crown_Area_m2, Neigh_H = Calibrated_Height_m)
+    ) %>%
+    mutate(Distance = sqrt((Sub_X - Neigh_X)^2 + (Sub_Y - Neigh_Y)^2)) %>%
+    filter(Distance > 0 & Distance <= search_radius)
+  
+  ci_calc <- distances %>%
+    mutate(
+      Competitor_Pressure = (Neigh_CA / Sub_CA) * (Neigh_H / Sub_H) * (1 / Distance)
+    ) %>%
+    group_by(Subject_ID) %>%
+    summarise(
+      n_neighbors = n(),
+      # CHANGED: Allow NA so we can explicitly interpolate missing dates later
+      Raw_CI = sum(Competitor_Pressure, na.rm = FALSE) / n_neighbors, 
+      .groups = "drop"
+    )
+  
+  result_df <- subject_df %>%
+    left_join(ci_calc, by = c("Tree_ID" = "Subject_ID")) 
+  # Removed replace_na(0) here so NAs pass through for interpolation
+  
+  return(result_df)
+}
+
+# ── 4. Calculate DYNAMIC Competition over Time ────────────────────────────
+
+cat("Computing dynamic Competition Index across all dates...\n")
+
+df_base <- df_base %>%
+  group_by(Date, Compartment, Plot) %>%
+  nest() %>%
+  mutate(data = map(data, compute_plot_ci)) %>%
+  unnest(cols = c(data)) %>%
+  ungroup() %>%
+  # NEW: Linearly interpolate missing CI values on borrowed dates for each tree
+  arrange(Tree_ID, Date) %>%
+  group_by(Tree_ID) %>%
+  # na.approx smoothly estimates the missing CI based on preceding and following flights
+  mutate(Raw_CI = zoo::na.approx(Raw_CI, na.rm = FALSE)) %>%
+  ungroup() %>%
+  # Handle completely isolated trees (no neighbors)
+  mutate(Raw_CI = replace_na(Raw_CI, 0)) %>%
+  # Log transformation to pull in extremes
+  mutate(Log_CI = log(Raw_CI + 1)) %>%
+  # Standardize across the entire dataset to allow the GAMM to interpret it easily
+  mutate(Scaled_CI = as.numeric(scale(Log_CI)))
+
 
 # ── Dominant Tree Filter Switch ──
 if (POPULATION_SUBSET == "Dominant") {
@@ -239,11 +341,12 @@ spacing_colors <- c(
 )
 
 spacing_display <- c(
-  "1x1m" = "1x1m",
-  "2x2m" = "2x2m",
-  "3x3m" = "3x3m",
-  "5x5m" = "5x5m"
+  "1x1m" = "1m",
+  "2x2m" = "2m",
+  "3x3m" = "3m",
+  "5x5m" = "5m"
 )
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # SHARED FUNCTIONS ####
@@ -257,7 +360,8 @@ fit_gamm_pair <- function(df, response_col) {
     as.formula(paste0(response_col, " ~
       s(days, k = 12, bs = 'cr') +
       s(days, by = Species,   k = 10, bs = 'tp') +
-      Species +                   
+      s(Scaled_CI, k = 5, bs = 'tp') +                   # Global competition effect
+      s(Scaled_CI, by = Species, k = 5, bs = 'tp') +     # Species-specific competition deviation
       Spacing_f +
       s(Plot_ID, bs = 're') +
       s(Tree_ID, bs = 're')")),
@@ -272,7 +376,8 @@ fit_gamm_pair <- function(df, response_col) {
     as.formula(paste0(response_col, " ~
       s(days, k = 12, bs = 'cr') +
       s(days, by = Spacing_f, k = 10, bs = 'tp') +
-      Spacing_f +                 
+      s(Scaled_CI, k = 5, bs = 'tp') +                   # Global competition effect
+      s(Scaled_CI, by = Spacing_f, k = 5, bs = 'tp') +   # Spacing-specific competition deviation
       Species +
       s(Plot_ID, bs = 're') +
       s(Tree_ID, bs = 're')")),
@@ -316,7 +421,7 @@ predict_traj <- function(model, newdata, backtransform = FALSE) {
     mutate(fit = fit_out, lwr = lwr_out, upr = upr_out, se = se_raw)
 }
 
-# ── Marginal Means Table Function ─────────────────────────────────────────────
+# ── Marginal Means Table Function (UPDATED) ───────────────────────────────────
 marginal_means <- function(model, group_var, group_levels,
                            fixed_var, fixed_level,
                            df_ref, key_days, key_labels, response_label,
@@ -326,6 +431,7 @@ marginal_means <- function(model, group_var, group_levels,
     !!group_var := factor(group_levels, levels = levels(df_ref[[group_var]])),
     !!fixed_var := factor(fixed_level,  levels = levels(df_ref[[fixed_var]])),
     Culture = factor("Single", levels = levels(df_ref$Culture)),
+    Scaled_CI = 0,       # <-- NEW: Set competition to trial average
     Plot_ID = levels(df_ref$Plot_ID)[1],
     Tree_ID = levels(df_ref$Tree_ID)[1]
   )
@@ -360,7 +466,7 @@ marginal_means <- function(model, group_var, group_levels,
 }
 
 
-# ── Rigorous lpmatrix Time-Series Differences ─────────────────────────────────
+# ── Rigorous lpmatrix Time-Series Differences (UPDATED) ───────────────────────
 pairwise_diffs_rigorous <- function(model, df_ref, pred_grid, group_var, is_log_scale = FALSE) {
   
   grp_levels <- if (is.factor(pred_grid[[group_var]])) levels(pred_grid[[group_var]]) else unique(pred_grid[[group_var]])
@@ -373,41 +479,55 @@ pairwise_diffs_rigorous <- function(model, df_ref, pred_grid, group_var, is_log_
   map_dfr(pairs, function(pair) {
     lv1 <- pair[1]; lv2 <- pair[2]
     
+    # 1. Extract the pre-calculated means from your prediction grid
     g1 <- pred_grid |> filter(.data[[group_var]] == lv1) |> arrange(days)
     g2 <- pred_grid |> filter(.data[[group_var]] == lv2) |> arrange(days)
     
+    # 2. Build explicit newdata frames for lpmatrix extraction
     nd1 <- g1 |> mutate(!!fixed_var := factor(fixed_level, levels = levels(df_ref[[fixed_var]])),
+                        Scaled_CI = 0, # <-- NEW: Set competition to trial average
                         Plot_ID = levels(df_ref$Plot_ID)[1], Tree_ID = levels(df_ref$Tree_ID)[1])
     
     nd2 <- g2 |> mutate(!!fixed_var := factor(fixed_level, levels = levels(df_ref[[fixed_var]])),
+                        Scaled_CI = 0, # <-- NEW: Set competition to trial average
                         Plot_ID = levels(df_ref$Plot_ID)[1], Tree_ID = levels(df_ref$Tree_ID)[1])
     
+    # 3. Extract lpmatrix (excluding plot/tree random effects)
     X1 <- predict(model, newdata = nd1, type = "lpmatrix", exclude = c("s(Plot_ID)", "s(Tree_ID)"))
     X2 <- predict(model, newdata = nd2, type = "lpmatrix", exclude = c("s(Plot_ID)", "s(Tree_ID)"))
     
+    # 4. Covariance-aware standard error calculation
     Xdiff <- X1 - X2
     V     <- vcov(model, unconditional = TRUE) 
     
+    # Calculate difference and SE strictly on the model's link scale
     fit_link <- as.numeric(Xdiff %*% coef(model))
     se_link  <- sqrt(rowSums((Xdiff %*% V) * Xdiff))
     
+    # 95% CI on the link scale (using strict 1.96 multiplier)
     lwr_link <- fit_link - 1.96 * se_link
     upr_link <- fit_link + 1.96 * se_link
     
     if (is_log_scale) {
+      
+      # Absolute difference on the back-transformed scale (for the trendline)
       abs_diff <- g1$fit - g2$fit
+      
       lwr_abs <- g2$fit * (exp(lwr_link) - 1)
       upr_abs <- g2$fit * (exp(upr_link) - 1)
+      
+      # SE for the stats table (back-transformed via delta method)
       se_abs <- se_link * g2$fit   
+      
+      # Rug and ribbon are now fully consistent — both from lpmatrix CI
       sig <- (lwr_abs > 0) | (upr_abs < 0)
       
-      tibble(group1 = lv1, group2 = lv2, 
-             comparison = paste0(lv1, " - ", lv2), days = g1$days,
+      tibble(comparison = paste0(lv1, " - ", lv2), days = g1$days,
              diff = abs_diff, se_diff = se_abs, lwr = lwr_abs, upr = upr_abs, sig = sig)
       
     } else {
-      tibble(group1 = lv1, group2 = lv2, 
-             comparison = paste0(lv1, " - ", lv2), days = g1$days,
+      # For Height (raw scale): link scale is the absolute scale
+      tibble(comparison = paste0(lv1, " - ", lv2), days = g1$days,
              diff = fit_link, se_diff = se_link, lwr = lwr_link, upr = upr_link, 
              sig = (lwr_link > 0) | (upr_link < 0))
     }
@@ -473,16 +593,8 @@ curve_plot <- function(curve_df, colour_var, colour_vals, colour_labels = NULL,
 }
 
 # ── Plot pairwise differences ─────────────────────────────────────────────────
-plot_diffs <- function(diff_df, y_label, fill_col = "steelblue", ncol = NULL, 
+plot_diffs <- function(diff_df, y_label, fill_col = "steelblue", ncol = 3,
                        title = NULL, subtitle = NULL) {
-  
-  # Lock in factor levels to ensure the baseline stays in the 1st column
-  all_levels <- unique(c(diff_df$group1, diff_df$group2))
-  diff_df <- diff_df |>
-    mutate(
-      group1 = factor(group1, levels = all_levels),
-      group2 = factor(group2, levels = all_levels)
-    )
   
   global_min_y <- min(diff_df$lwr, na.rm = TRUE)
   global_max_y <- max(diff_df$upr, na.rm = TRUE)
@@ -497,37 +609,33 @@ plot_diffs <- function(diff_df, y_label, fill_col = "steelblue", ncol = NULL,
                aes(x = days, y = rug_y_pos),
                colour = "#ff3333", alpha = 0.8,
                shape = 124, size = 2) +
-    
-    # facet_grid automatically generates the lower triangle matrix layout
-    facet_grid(group2 ~ group1) +
-    
+    facet_wrap(~ comparison, ncol = ncol) +
     scale_y_continuous(expand = expansion(mult = c(0.15, 0.05))) +
     labs(x = "Days from 1 September 2025", y = y_label,
          title = title, subtitle = subtitle) +
     theme_thesis() +
     theme(
-      plot.title       = element_text(size = 9, face = "bold", margin = margin(b = 2)),
-      plot.subtitle    = element_text(size = 7.5, colour = "grey40", margin = margin(b = 3)),
-      # Optional styling for the matrix headers and borders to look clean
-      strip.background = element_rect(fill = "grey95", colour = "grey70", linewidth = 0.5),
-      strip.text       = element_text(face = "bold", size = 8),
-      panel.border     = element_rect(colour = "grey70", fill = NA, linewidth = 0.5)
+      plot.title    = element_text(size = 9, face = "bold", margin = margin(b = 2)),
+      plot.subtitle = element_text(size = 7.5, colour = "grey40", margin = margin(b = 3))
     )
 }
 
-# ── Statistics helpers ────────────────────────────────────────────────────────
+# ── Statistics helpers (UPDATED) ──────────────────────────────────────────────
 smooth_sig_table <- function(model, response_label) {
   s      <- summary(model)
   sp_tbl <- as.data.frame(s$s.table)
+  
+  # NEW: Extract both the days smooths AND the Scaled_CI smooths
   sp_tbl <- sp_tbl[
-    grepl("^s\\(days\\):", rownames(sp_tbl)),
+    grepl("^s\\(days\\)|s\\(Scaled_CI\\)", rownames(sp_tbl)), 
   ]
+  
   sp_tbl$Term     <- rownames(sp_tbl)
   sp_tbl$Response <- response_label
   sp_tbl$Sig      <- ifelse(sp_tbl[["p-value"]] < 0.001, "***",
                             ifelse(sp_tbl[["p-value"]] < 0.01,  "**",
                                    ifelse(sp_tbl[["p-value"]] < 0.05,  "*",
-                                          ifelse(sp_tbl[["p-value"]] < 0.1,   ".",  "ns"))))
+                                          ifelse(sp_tbl[["p-value"]] < 0.1,  ".",  "ns"))))
   sp_tbl |>
     select(Response, Term, edf = edf, F = F, p = `p-value`, Sig) |>
     mutate(edf = round(edf, 2), F = round(F, 3), p = sprintf("%.2e", p))
@@ -560,7 +668,7 @@ pairwise_at_day <- function(diff_df, target_day, response_label, factor_label) {
 }
 
 
-# ── Prediction grid helpers ───────────────────────────────────────────────────
+# ── Prediction grid helpers (UPDATED) ─────────────────────────────────────────
 make_full_grid <- function(days_seq, df_ref) {
   expand_grid(
     days = days_seq,
@@ -571,6 +679,7 @@ make_full_grid <- function(days_seq, df_ref) {
       Species   = factor(Species, levels = levels(df_ref$Species)),
       Spacing_f = factor(Spacing_f, levels = levels(df_ref$Spacing_f)),
       Culture   = factor("Single", levels = levels(df_ref$Culture)),
+      Scaled_CI = 0,   # <-- NEW: Set competition to trial average
       Plot_ID   = levels(df_ref$Plot_ID)[1],
       Tree_ID   = levels(df_ref$Tree_ID)[1]
     )
@@ -585,6 +694,7 @@ make_species_grid <- function(days_seq, df_ref) {
       Species   = factor(Species, levels = levels(df_ref$Species)),
       Spacing_f = levels(df_ref$Spacing_f)[1],
       Culture   = factor("Single", levels = levels(df_ref$Culture)),
+      Scaled_CI = 0,   # <-- NEW: Set competition to trial average
       Plot_ID   = levels(df_ref$Plot_ID)[1],
       Tree_ID   = levels(df_ref$Tree_ID)[1]
     )
@@ -599,10 +709,32 @@ make_spacing_grid <- function(days_seq, df_ref) {
       Spacing_f = factor(Spacing_f, levels = levels(df_ref$Spacing_f)),
       Species   = levels(df_ref$Species)[1],
       Culture   = factor("Single", levels = levels(df_ref$Culture)),
+      Scaled_CI = 0,   # <-- NEW: Set competition to trial average
       Plot_ID   = levels(df_ref$Plot_ID)[1],
       Tree_ID   = levels(df_ref$Tree_ID)[1]
     )
 }
+
+
+# ── DIAGNOSTIC BLOCK ──────────────────────────────────────────────────────────
+cat("Checking df_h before modeling...\n")
+
+# 1. Check if Scaled_CI exists in the dataframe
+if (!"Scaled_CI" %in% names(df_h)) {
+  stop("ERROR: 'Scaled_CI' column is missing from df_h!")
+}
+
+# 2. Check for NAs
+na_count <- sum(is.na(df_h$Scaled_CI))
+if (na_count > 0) {
+  cat("WARNING: Found", na_count, "NAs in Scaled_CI. Interpolating now...\n")
+  # Fix: If any NAs remain at the edges (which na.approx can't fill), replace with 0
+  df_h$Scaled_CI[is.na(df_h$Scaled_CI)] <- 0
+}
+
+cat("Structure of df_h variables:\n")
+print(str(df_h %>% select(Height, days, Species, Spacing_f, Plot_ID, Tree_ID, Scaled_CI)))
+# ──────────────────────────────────────────────────────────────────────────────
 
 # ──────────────────────────────────────────────────────────────────────────────
 # FIT MODELS ####
@@ -774,101 +906,100 @@ curve_r_sc <- predict_traj(models_r$spacing, make_spacing_grid(days_r, df_r), ba
 
 cat("\nGenerating plots...\n")
 
-# ── CROWN AREA plots ──────────────────────────────────────────────────────────
-p_c_sp_diff <- plot_diffs(sp_diffs_c,
-                          y_label  = "Difference in crown area (m\u00b2)",
-                          fill_col = "#1b9e77", ncol = 3,
-                          title    = "Species pairwise crown area differences",
-                          subtitle = paste0(POPULATION_LABEL, " | Simulated at ", BASELINE_SPACING, " | Shaded = 95% CI | Red rug = significant period"))
-ggsave(file.path(OUTPUT_DIR, "crown_species_differences.png"), p_c_sp_diff,
-       width = 6.30, height = 5, units = "in", dpi = 300)
-
-p_c_sc_diff <- plot_diffs(sc_diffs_c,
-                          y_label  = "Difference in crown area (m\u00b2)",
-                          fill_col = "#d95f02", ncol = 3,
-                          title    = "Spacing pairwise crown area differences",
-                          subtitle = paste0(POPULATION_LABEL, " | Simulated for ", BASELINE_SPECIES, " | Shaded = 95% CI | Red rug = significant period"))
-ggsave(file.path(OUTPUT_DIR, "crown_spacing_differences.png"), p_c_sc_diff,
-       width = 4, height = 3.0, units = "in", dpi = 300)
-
-p_c_sp_curves <- curve_plot(curve_c_sp, "Species", species_colors,
-                            colour_labels = species_display,
-                            legend_title  = "Species",
-                            y_label       = "Crown area (m\u00b2)",
-                            title         = "GAMM-fitted crown area growth trajectories by species",
-                            subtitle = paste0(POPULATION_LABEL, " | Simulated at ", BASELINE_SPACING, " | Shaded = 95% CI"))
-
-p_c_sc_curves <- curve_plot(curve_c_sc, "Spacing_f", spacing_colors,
-                            colour_labels = spacing_display,
-                            legend_title  = "Spacing",
-                            y_label       = "Crown area (m\u00b2)",
-                            title         = "GAMM-fitted crown area growth trajectories by spacing",
-                            subtitle = paste0(POPULATION_LABEL, " | Simulated for ", BASELINE_SPECIES, " | Shaded = 95% CI"))
-
 # ── HEIGHT plots ──────────────────────────────────────────────────────────────
 p_h_sp_diff <- plot_diffs(sp_diffs_h,
                           y_label  = "Difference in height (m)",
                           fill_col = "steelblue", ncol = 3,
                           title    = "Species pairwise height differences",
-                          subtitle = paste0(POPULATION_LABEL, " | Simulated at ", BASELINE_SPACING, " | Shaded = 95% CI | Red rug = significant period"))
+                          subtitle = paste0(POPULATION_LABEL, " | At 2\u00d71m spacing | Shaded = 95% CI | Red rug = significant period"))
 ggsave(file.path(OUTPUT_DIR, "height_species_differences.png"), p_h_sp_diff,
-       width = 6.30, height = 5, units = "in", dpi = 300)
+       width = 6.30, height = 5.5, units = "in", dpi = 300)
 
 p_h_sc_diff <- plot_diffs(sc_diffs_h,
                           y_label  = "Difference in height (m)",
                           fill_col = "darkorange", ncol = 3,
                           title    = "Spacing pairwise height differences",
-                          subtitle = paste0(POPULATION_LABEL, " | Simulated for ", BASELINE_SPECIES, " | Shaded = 95% CI | Red rug = significant period"))
+                          subtitle = paste0(POPULATION_LABEL, " | Grandis baseline | Shaded = 95% CI | Red rug = significant period"))
 ggsave(file.path(OUTPUT_DIR, "height_spacing_differences.png"), p_h_sc_diff,
-       width = 4, height = 3.0, units = "in", dpi = 300)
+       width = 6.30, height = 3.0, units = "in", dpi = 300)
 
 p_h_sp_curves <- curve_plot(curve_h_sp, "Species", species_colors,
                             colour_labels = species_display,
                             legend_title  = "Species",
                             y_label       = "Calibrated height (m)",
                             title         = "GAMM-fitted height growth trajectories by species",
-                            subtitle = paste0(POPULATION_LABEL, " | Simulated at ", BASELINE_SPACING, " | Shaded = 95% CI"))
+                            subtitle = paste0(POPULATION_LABEL, " | At 2\u00d71m spacing | Shaded = 95% CI"))
 
 p_h_sc_curves <- curve_plot(curve_h_sc, "Spacing_f", spacing_colors,
                             colour_labels = spacing_display,
                             legend_title  = "Spacing",
                             y_label       = "Calibrated height (m)",
                             title         = "GAMM-fitted height growth trajectories by spacing",
-                            subtitle = paste0(POPULATION_LABEL, " | Simulated for ", BASELINE_SPECIES, " | Shaded = 95% CI"))
+                            subtitle = paste0(POPULATION_LABEL, " | Grandis baseline | Shaded = 95% CI"))
 
+# ── CROWN AREA plots ──────────────────────────────────────────────────────────
+p_c_sp_diff <- plot_diffs(sp_diffs_c,
+                          y_label  = "Difference in crown area (m\u00b2)",
+                          fill_col = "#1b9e77", ncol = 3,
+                          title    = "Species pairwise crown area differences",
+                          subtitle = paste0(POPULATION_LABEL, " | At 2\u00d71m spacing | Shaded = 95% CI | Red rug = significant period"))
+ggsave(file.path(OUTPUT_DIR, "crown_species_differences.png"), p_c_sp_diff,
+       width = 6.30, height = 5.5, units = "in", dpi = 300)
+
+p_c_sc_diff <- plot_diffs(sc_diffs_c,
+                          y_label  = "Difference in crown area (m\u00b2)",
+                          fill_col = "#d95f02", ncol = 3,
+                          title    = "Spacing pairwise crown area differences",
+                          subtitle = paste0(POPULATION_LABEL, " | Grandis baseline | Shaded = 95% CI | Red rug = significant period"))
+ggsave(file.path(OUTPUT_DIR, "crown_spacing_differences.png"), p_c_sc_diff,
+       width = 6.30, height = 3.0, units = "in", dpi = 300)
+
+p_c_sp_curves <- curve_plot(curve_c_sp, "Species", species_colors,
+                            colour_labels = species_display,
+                            legend_title  = "Species",
+                            y_label       = "Crown area (m\u00b2)",
+                            title         = "GAMM-fitted crown area growth trajectories by species",
+                            subtitle = paste0(POPULATION_LABEL, " | At 2\u00d71m spacing | Shaded = 95% CI"))
+
+p_c_sc_curves <- curve_plot(curve_c_sc, "Spacing_f", spacing_colors,
+                            colour_labels = spacing_display,
+                            legend_title  = "Spacing",
+                            y_label       = "Crown area (m\u00b2)",
+                            title         = "GAMM-fitted crown area growth trajectories by spacing",
+                            subtitle = paste0(POPULATION_LABEL, " | Grandis baseline | Shaded = 95% CI"))
 
 # ── CA:H RATIO plots ──────────────────────────────────────────────────────────
 p_r_sp_diff <- plot_diffs(sp_diffs_r,
                           y_label  = "Difference in CA:H ratio (m\u00b2 m\u207b\u00b9)",
                           fill_col = "#6a3d9a", ncol = 3,
                           title    = "Species pairwise CA:H ratio differences",
-                          subtitle = paste0(POPULATION_LABEL, " | Simulated at ", BASELINE_SPACING, " | Shaded = 95% CI | Red rug = significant period"))
+                          subtitle = paste0(POPULATION_LABEL, " | At 2\u00d71m spacing | Shaded = 95% CI | Red rug = significant period"))
 ggsave(file.path(OUTPUT_DIR, "cah_species_differences.png"), p_r_sp_diff,
-       width = 6.30, height = 5, units = "in", dpi = 300)
+       width = 6.30, height = 5.5, units = "in", dpi = 300)
 
 p_r_sc_diff <- plot_diffs(sc_diffs_r,
                           y_label  = "Difference in CA:H ratio (m\u00b2 m\u207b\u00b9)",
                           fill_col = "#e31a1c", ncol = 3,
                           title    = "Spacing pairwise CA:H ratio differences",
-                          subtitle = paste0(POPULATION_LABEL, " | Simulated for ", BASELINE_SPECIES, " | Shaded = 95% CI | Red rug = significant period"))
+                          subtitle = paste0(POPULATION_LABEL, " | Grandis baseline | Shaded = 95% CI | Red rug = significant period"))
 ggsave(file.path(OUTPUT_DIR, "cah_spacing_differences.png"), p_r_sc_diff,
-       width = 4, height = 3.0, units = "in", dpi = 300)
+       width = 6.30, height = 3.0, units = "in", dpi = 300)
 
 p_r_sp_curves <- curve_plot(curve_r_sp, "Species", species_colors,
                             colour_labels = species_display,
                             legend_title  = "Species",
                             y_label       = "CA:H ratio (m\u00b2 m\u207b\u00b9)",
                             title         = "GAMM-fitted CA:H ratio trajectories by species",
-                            subtitle = paste0(POPULATION_LABEL, " | Simulated at ", BASELINE_SPACING, " | Shaded = 95% CI"))
+                            subtitle = paste0(POPULATION_LABEL, " | At 2\u00d71m spacing | Shaded = 95% CI"))
 
 p_r_sc_curves <- curve_plot(curve_r_sc, "Spacing_f", spacing_colors,
                             colour_labels = spacing_display,
                             legend_title  = "Spacing",
                             y_label       = "CA:H ratio (m\u00b2 m\u207b\u00b9)",
                             title         = "GAMM-fitted CA:H ratio trajectories by spacing",
-                            subtitle = paste0(POPULATION_LABEL, " | Simulated for ", BASELINE_SPECIES, " | Shaded = 95% CI"))
+                            subtitle = paste0(POPULATION_LABEL, " | Grandis baseline | Shaded = 95% CI"))
 
-# ── AUTOMATED LABEL FUNCTION ──────────────────────────────────────────────────
+# ── AUTOMATED LABEL FUNCTION (ROBUST VERSION) ─────────────────────────────────
 attach_labels_auto <- function(curve_df, diff_df, group_var, target_day, y_positions) {
   
   # 1. Isolate the pairwise differences for the final day
@@ -876,12 +1007,24 @@ attach_labels_auto <- function(curve_df, diff_df, group_var, target_day, y_posit
     filter(abs(days - target_day) == min(abs(days - target_day))) |>
     slice(1, .by = comparison)
   
-  # 2. Create a logical vector of significance
+  # 2. Create logical vector. Identify significant differences (CI excludes zero).
+  # We explicitly convert NAs to FALSE to ensure multcompLetters doesn't crash.
   is_diff <- (day_data$lwr > 0) | (day_data$upr < 0)
+  is_diff[is.na(is_diff)] <- FALSE 
+  
+  # Ensure vector names match the pair format multcompLetters expects (e.g., "A-B")
   names(is_diff) <- gsub(" - ", "-", day_data$comparison)
   
   # 3. Generate the automated letters
-  cld <- multcompView::multcompLetters(is_diff)$Letters
+  # Check if we have any significant differences at all
+  if (any(is_diff)) {
+    cld <- multcompView::multcompLetters(is_diff)$Letters
+  } else {
+    # If no significant differences found, return single letter "a" for everyone
+    levels_in_data <- levels(curve_df[[group_var]])
+    cld <- setNames(rep("a", length(levels_in_data)), levels_in_data)
+  }
+  
   letters_df <- tibble(
     !!group_var := names(cld),
     letter = as.character(cld)
@@ -898,64 +1041,13 @@ attach_labels_auto <- function(curve_df, diff_df, group_var, target_day, y_posit
 
 # ── SIGNIFICANCE LABELS (DAY 266) ─────────────────────────────────────────────
 
-
-
-# 1. CROWN AREA LABELS
-lbl_c_sp <- attach_labels_auto(
-  curve_df    = curve_c_sp,
-  diff_df     = sp_diffs_c,
-  group_var   = "Species",
-  target_day  = 266,
-  y_positions = c(1.20, 1.05, 0.90, 0.70, 0.55)
-)
-
-p_c_sp_curves <- p_c_sp_curves +
-  geom_label(
-    data = lbl_c_sp,
-    aes(
-      x = max(days) + 12,
-      y = y_lab,
-      label = letter,
-      fill = Species
-    ),
-    color = "white",
-    fontface = "bold",
-    size = 3,
-    label.r = unit(0, "lines"),
-    show.legend = FALSE
-  )
-
-lbl_c_sc <- attach_labels_auto(
-  curve_df    = curve_c_sc,
-  diff_df     = sc_diffs_c,
-  group_var   = "Spacing_f",
-  target_day  = 266,
-  y_positions = c(3.0, 2.6, 2.05, 0.90)
-)
-
-p_c_sc_curves <- p_c_sc_curves +
-  geom_label(
-    data = lbl_c_sc,
-    aes(
-      x = max(days) + 12,
-      y = y_lab,
-      label = letter,
-      fill = Spacing_f
-    ),
-    color = "white",
-    fontface = "bold",
-    size = 3,
-    label.r = unit(0, "lines"),
-    show.legend = FALSE
-  )
-
-# 2. HEIGHT LABELS
+# 1. HEIGHT LABELS
 lbl_h_sp <- attach_labels_auto(
   curve_df    = curve_h_sp,
   diff_df     = sp_diffs_h,
   group_var   = "Species",
   target_day  = 266,
-  y_positions = c(4.4, 4, 3.6, 2.85, 2.05)
+  y_positions = c(4.1, 3.80, 3.5, 3.2, 2.85)
 )
 
 p_h_sp_curves <- p_h_sp_curves +
@@ -998,13 +1090,62 @@ p_h_sc_curves <- p_h_sc_curves +
     show.legend = FALSE
   )
 
+# 2. CROWN AREA LABELS
+lbl_c_sp <- attach_labels_auto(
+  curve_df    = curve_c_sp,
+  diff_df     = sp_diffs_c,
+  group_var   = "Species",
+  target_day  = 266,
+  y_positions = c(1.0, 0.92, 0.84, 0.76, 0.68)
+)
+
+p_c_sp_curves <- p_c_sp_curves +
+  geom_label(
+    data = lbl_c_sp,
+    aes(
+      x = max(days) + 12,
+      y = y_lab,
+      label = letter,
+      fill = Species
+    ),
+    color = "white",
+    fontface = "bold",
+    size = 3,
+    label.r = unit(0, "lines"),
+    show.legend = FALSE
+  )
+
+lbl_c_sc <- attach_labels_auto(
+  curve_df    = curve_c_sc,
+  diff_df     = sc_diffs_c,
+  group_var   = "Spacing_f",
+  target_day  = 266,
+  y_positions = c(2.35, 2.1, 1.8, 1.5)
+)
+
+p_c_sc_curves <- p_c_sc_curves +
+  geom_label(
+    data = lbl_c_sc,
+    aes(
+      x = max(days) + 12,
+      y = y_lab,
+      label = letter,
+      fill = Spacing_f
+    ),
+    color = "white",
+    fontface = "bold",
+    size = 3,
+    label.r = unit(0, "lines"),
+    show.legend = FALSE
+  )
+
 # 3. CA:H RATIO LABELS
 lbl_r_sp <- attach_labels_auto(
   curve_df    = curve_r_sp,
   diff_df     = sp_diffs_r,
   group_var   = "Species",
   target_day  = 266,
-  y_positions = c(0.36, 0.32, 0.28, 0.24, 0.20)
+  y_positions = c(0.32, 0.295, 0.27, 0.245, 0.21)
 )
 
 p_r_sp_curves <- p_r_sp_curves +
@@ -1028,7 +1169,7 @@ lbl_r_sc <- attach_labels_auto(
   diff_df     = sc_diffs_r,
   group_var   = "Spacing_f",
   target_day  = 266,
-  y_positions = c(0.77, 0.63, 0.5, 0.23)
+  y_positions = c(0.58, 0.52, 0.46, 0.40)
 )
 
 p_r_sc_curves <- p_r_sc_curves +
@@ -1108,7 +1249,7 @@ p_combined_3x2 <- (c_sp_3x2 | c_sc_3x2) /
   (r_sp_3x2   | r_sc_3x2)   +
   plot_annotation(
     title = paste0("GAMM-fitted growth trajectories \u2014 ", POPULATION_LABEL),
-    subtitle = paste0("Left: Species comparisons (Simulated at ", BASELINE_SPACING, ")  |  Right: Spacing comparisons (Simulated for ", BASELINE_SPECIES, ")"),
+    subtitle = "Left: by species (at 2x2m spacing)  |  Right: by spacing (Grandis baseline)",
     theme = theme(
       plot.title = element_text(
         size   = 10,
