@@ -22,25 +22,18 @@
 #     [exp(fit - 1.96*se),  exp(fit + 1.96*se)]
 #   This guarantees positive CI bounds and correct asymmetry.
 #
-# Model structure (per response, ONE combined model):
-#   model_x: s(days, k=12, bs='cr')
-#          + s(days, by=Species,   k=10, bs='tp')
-#          + s(days, by=Spacing_f, k=10, bs='tp')
-#          + Species                              [fixed parametric — level shift]
-#          + Spacing_f                            [fixed parametric — level shift]
-#          + s(Plot_ID, bs='re') + s(Tree_ID, bs='re')
+# Model structure (per response, two models):
+#   m_species: s(days, k=12, bs='cr')
+#            + s(days, by=Species,   k=10, bs='tp')
+#            + Species                              [fixed parametric — level shift]
+#            + Spacing_f                            [fixed parametric — control]
+#            + s(Plot_ID, bs='re') + s(Tree_ID, bs='re')
 #
-# WHY A SINGLE COMBINED MODEL (not separate species/spacing models):
-#   A pilot comparison (AIC + curve back-prediction) showed the combined
-#   model fits substantially better than either split model for all three
-#   responses (AIC differences in the thousands), and that split-model curves
-#   were measurably biased relative to the combined model — most severely for
-#   the factor NOT being smoothed in that split model (e.g. spacing curves
-#   from the species-only Height model were off by up to ~0.41 m). Height is
-#   driven more by species identity; Crown Area and CA:H are driven more by
-#   spacing — so omitting either factor's smooth term biases that model's
-#   under-represented dimension. The combined model avoids this by letting
-#   both factors have their own smooth AND parametric terms simultaneously.
+#   m_spacing: s(days, k=12, bs='cr')
+#            + s(days, by=Spacing_f, k=10, bs='tp')
+#            + Spacing_f                             [fixed parametric — level shift]
+#            + Species                               [fixed parametric — control]
+#            + s(Plot_ID, bs='re') + s(Tree_ID, bs='re')
 #
 # WHY THE BY-SMOOTH FACTOR IS ALSO PARAMETRIC:
 #   s(days, by=factor) smooths carry a sum-to-zero constraint per level, so
@@ -65,8 +58,8 @@
 #   height / crown / cah  _curves_ species / spacing .png
 #   height / crown / cah  _species / spacing _differences.png
 #   combined_3x2_curves.png
-#   diag_ height / crown / cah _combined.png
-#   Height/Crown/CAH_Combined_gamcheck.txt
+#   diag_ height / crown / cah  _ species / spacing .png
+#   Height/Crown/CAH_Species/Spacing_gamcheck.txt
 # ──────────────────────────────────────────────────────────────────────────────
 
 
@@ -265,23 +258,40 @@ spacing_display <- c(
 # SHARED FUNCTIONS ####
 # ──────────────────────────────────────────────────────────────────────────────
 
-# ── Fit a single combined GAMM (Species + Spacing by-smooths together) ────────
-fit_gamm_combined <- function(df, response_col) {
-  cat("  Fitting combined model...\n")
-  bam(
+# ── Fit a pair of GAMMs (all three responses use gaussian() ) ─────────────────
+fit_gamm_pair <- function(df, response_col) {
+  
+  cat("  Fitting species model...\n")
+  m_sp <- bam(
     as.formula(paste0(response_col, " ~
       s(days, k = 12, bs = 'cr') +
       s(days, by = Species,   k = 10, bs = 'tp') +
-      s(days, by = Spacing_f, k = 10, bs = 'tp') +
-      Species +
+      Species +                   
       Spacing_f +
       s(Plot_ID, bs = 're') +
       s(Tree_ID, bs = 're')")),
     data     = df,
     family   = gaussian(),
     method   = "fREML",
-    discrete = TRUE
+    discrete = TRUE     
   )
+  
+  cat("  Fitting spacing model...\n")
+  m_sc <- bam(
+    as.formula(paste0(response_col, " ~
+      s(days, k = 12, bs = 'cr') +
+      s(days, by = Spacing_f, k = 10, bs = 'tp') +
+      Spacing_f +                 
+      Species +
+      s(Plot_ID, bs = 're') +
+      s(Tree_ID, bs = 're')")),
+    data     = df,
+    family   = gaussian(),
+    method   = "fREML",
+    discrete = TRUE         
+  )
+  
+  list(species = m_sp, spacing = m_sc)
 }
 
 
@@ -515,21 +525,6 @@ plot_diffs <- function(diff_df, y_label, fill_col = "steelblue", ncol = NULL,
 }
 
 # ── Statistics helpers ────────────────────────────────────────────────────────
-
-
-# Extract Model Fit Statistics
-extract_fit_stats <- function(model, model_name) {
-  s <- summary(model)
-  tibble(
-    Response = model_name,
-    Adj_R_squared = round(s$r.sq, 4),
-    Deviance_Explained = round(s$dev.expl, 4),
-    REML_Score = round(s$sp.criterion, 1),
-    N_Obs = s$n
-  )
-}
-
-
 smooth_sig_table <- function(model, response_label) {
   s      <- summary(model)
   sp_tbl <- as.data.frame(s$s.table)
@@ -622,29 +617,33 @@ make_spacing_grid <- function(days_seq, df_ref) {
 # FIT MODELS ####
 # ──────────────────────────────────────────────────────────────────────────────
 # All three responses: Gaussian family (log-scale for Crown and CA:H)
-# Each response now gets ONE combined model (Species by-smooth + Spacing
-# by-smooth together), replacing the earlier species/spacing model pair.
 # If models already in memory, skip to PREDICTION GRIDS
-# Expected runtime: ~10-15 min per model (~30-45 min total)
+# Expected runtime: ~5-10 min per model pair (~30 min total)
 # ──────────────────────────────────────────────────────────────────────────────
 
 cat("══ RESPONSE 1: Calibrated Height (Gaussian, raw scale) ════════════════\n")
-model_h <- fit_gamm_combined(df_h, "Height")
-cat("\n── Height combined model summary ────────────────────────────────────\n")
-print(summary(model_h))
+models_h <- fit_gamm_pair(df_h, "Height")
+cat("\n── Height species model summary ─────────────────────────────────────\n")
+print(summary(models_h$species))
+cat("\n── Height spacing model summary ─────────────────────────────────────\n")
+print(summary(models_h$spacing))
 
 cat("\n══ RESPONSE 2: Crown Area (Gaussian, log scale) ════════════════════════\n")
 cat("   Fitted on log(Crown_Area_m2); predictions back-transformed to m²\n\n")
-model_c <- fit_gamm_combined(df_c, "Crown")
-cat("\n── Crown combined model summary ─────────────────────────────────────\n")
-print(summary(model_c))
+models_c <- fit_gamm_pair(df_c, "Crown")
+cat("\n── Crown species model summary ──────────────────────────────────────\n")
+print(summary(models_c$species))
+cat("\n── Crown spacing model summary ──────────────────────────────────────\n")
+print(summary(models_c$spacing))
 
 cat("\n══ RESPONSE 3: CA:H Ratio (Gaussian, log scale) ════════════════════════\n")
 cat("   CA:H = Crown_Area_m2 / Height_m  (m2 m-1)\n")
 cat("   Fitted on log(CA:H); predictions back-transformed to m2 m-1\n\n")
-model_r <- fit_gamm_combined(df_r, "CAH")
-cat("\n── CA:H combined model summary ──────────────────────────────────────\n")
-print(summary(model_r))
+models_r <- fit_gamm_pair(df_r, "CAH")
+cat("\n── CA:H species model summary ───────────────────────────────────────\n")
+print(summary(models_r$species))
+cat("\n── CA:H spacing model summary ───────────────────────────────────────\n")
+print(summary(models_r$spacing))
 
 # ──────────────────────────────────────────────────────────────────────────────
 # MODEL DIAGNOSTICS ####
@@ -687,9 +686,41 @@ save_gam_check <- function(model, model_name, output_dir) {
 # Run and save GAM checks
 # ──────────────────────────────────────────────────────────────────────────────
 
-save_gam_check(model_h, "Height Combined", OUTPUT_DIR)
-save_gam_check(model_c, "Crown Area Combined", OUTPUT_DIR)
-save_gam_check(model_r, "CAH Ratio Combined", OUTPUT_DIR)
+save_gam_check(
+  models_h$species,
+  "Height Species",
+  OUTPUT_DIR
+)
+
+save_gam_check(
+  models_h$spacing,
+  "Height Spacing",
+  OUTPUT_DIR
+)
+
+save_gam_check(
+  models_c$species,
+  "Crown Area Species",
+  OUTPUT_DIR
+)
+
+save_gam_check(
+  models_c$spacing,
+  "Crown Area Spacing",
+  OUTPUT_DIR
+)
+
+save_gam_check(
+  models_r$species,
+  "CAH Ratio Species",
+  OUTPUT_DIR
+)
+
+save_gam_check(
+  models_r$spacing,
+  "CAH Ratio Spacing",
+  OUTPUT_DIR
+)
 
 cat("\n")
 cat("All GAM diagnostic reports saved.\n")
@@ -704,27 +735,27 @@ days_c <- seq(min(df_c$days), max(df_c$days), length.out = 300)
 days_r <- seq(min(df_r$days), max(df_r$days), length.out = 300)
 
 cat("Predicting height trajectories...\n")
-sp_diffs_h <- pairwise_diffs_rigorous(model_h, df_h, 
-                                      predict_traj(model_h, make_species_grid(days_h, df_h)),
+sp_diffs_h <- pairwise_diffs_rigorous(models_h$species, df_h, 
+                                      predict_traj(models_h$species, make_species_grid(days_h, df_h)),
                                       "Species", is_log_scale = FALSE)
-sc_diffs_h <- pairwise_diffs_rigorous(model_h, df_h,
-                                      predict_traj(model_h, make_spacing_grid(days_h, df_h)),
+sc_diffs_h <- pairwise_diffs_rigorous(models_h$spacing, df_h,
+                                      predict_traj(models_h$spacing, make_spacing_grid(days_h, df_h)),
                                       "Spacing_f", is_log_scale = FALSE)
 
 cat("Predicting crown area trajectories (back-transforming to m2)...\n")
-sp_diffs_c <- pairwise_diffs_rigorous(model_c, df_c,
-                                      predict_traj(model_c, make_species_grid(days_c, df_c), backtransform = TRUE),
+sp_diffs_c <- pairwise_diffs_rigorous(models_c$species, df_c,
+                                      predict_traj(models_c$species, make_species_grid(days_c, df_c), backtransform = TRUE),
                                       "Species", is_log_scale = TRUE)
-sc_diffs_c <- pairwise_diffs_rigorous(model_c, df_c,
-                                      predict_traj(model_c, make_spacing_grid(days_c, df_c), backtransform = TRUE),
+sc_diffs_c <- pairwise_diffs_rigorous(models_c$spacing, df_c,
+                                      predict_traj(models_c$spacing, make_spacing_grid(days_c, df_c), backtransform = TRUE),
                                       "Spacing_f", is_log_scale = TRUE)
 
 cat("Predicting CA:H ratio trajectories (back-transforming to m2 m-1)...\n")
-sp_diffs_r <- pairwise_diffs_rigorous(model_r, df_r,
-                                      predict_traj(model_r, make_species_grid(days_r, df_r), backtransform = TRUE),
+sp_diffs_r <- pairwise_diffs_rigorous(models_r$species, df_r,
+                                      predict_traj(models_r$species, make_species_grid(days_r, df_r), backtransform = TRUE),
                                       "Species", is_log_scale = TRUE)
-sc_diffs_r <- pairwise_diffs_rigorous(model_r, df_r,
-                                      predict_traj(model_r, make_spacing_grid(days_r, df_r), backtransform = TRUE),
+sc_diffs_r <- pairwise_diffs_rigorous(models_r$spacing, df_r,
+                                      predict_traj(models_r$spacing, make_spacing_grid(days_r, df_r), backtransform = TRUE),
                                       "Spacing_f", is_log_scale = TRUE)
 
 cat("\nRange checks (all should be non-zero):\n")
@@ -736,14 +767,14 @@ cat("CA:H     species:", round(range(sp_diffs_r$diff), 3), "\n")
 cat("CA:H     spacing:", round(range(sc_diffs_r$diff), 3), "\n")
 
 # Growth curve grids
-curve_h_sp <- predict_traj(model_h, make_species_grid(days_h, df_h))
-curve_h_sc <- predict_traj(model_h, make_spacing_grid(days_h, df_h))
+curve_h_sp <- predict_traj(models_h$species, make_species_grid(days_h, df_h))
+curve_h_sc <- predict_traj(models_h$spacing, make_spacing_grid(days_h, df_h))
 
-curve_c_sp <- predict_traj(model_c, make_species_grid(days_c, df_c), backtransform = TRUE)
-curve_c_sc <- predict_traj(model_c, make_spacing_grid(days_c, df_c), backtransform = TRUE)
+curve_c_sp <- predict_traj(models_c$species, make_species_grid(days_c, df_c), backtransform = TRUE)
+curve_c_sc <- predict_traj(models_c$spacing, make_spacing_grid(days_c, df_c), backtransform = TRUE)
 
-curve_r_sp <- predict_traj(model_r, make_species_grid(days_r, df_r), backtransform = TRUE)
-curve_r_sc <- predict_traj(model_r, make_spacing_grid(days_r, df_r), backtransform = TRUE)
+curve_r_sp <- predict_traj(models_r$species, make_species_grid(days_r, df_r), backtransform = TRUE)
+curve_r_sc <- predict_traj(models_r$spacing, make_spacing_grid(days_r, df_r), backtransform = TRUE)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -884,7 +915,7 @@ lbl_c_sp <- attach_labels_auto(
   diff_df     = sp_diffs_c,
   group_var   = "Species",
   target_day  = 266,
-  y_positions = c(1.15, 1.00, 0.85, 0.65, 0.50)
+  y_positions = c(1.20, 1.05, 0.90, 0.70, 0.55)
 )
 
 p_c_sp_curves <- p_c_sp_curves +
@@ -908,7 +939,7 @@ lbl_c_sc <- attach_labels_auto(
   diff_df     = sc_diffs_c,
   group_var   = "Spacing_f",
   target_day  = 266,
-  y_positions = c(3.0, 2.5, 2.00, 0.90)
+  y_positions = c(3.0, 2.6, 2.05, 0.90)
 )
 
 p_c_sc_curves <- p_c_sc_curves +
@@ -982,7 +1013,7 @@ lbl_r_sp <- attach_labels_auto(
   diff_df     = sp_diffs_r,
   group_var   = "Species",
   target_day  = 266,
-  y_positions = c(0.36, 0.32, 0.28, 0.235, 0.195)
+  y_positions = c(0.36, 0.32, 0.28, 0.24, 0.20)
 )
 
 p_r_sp_curves <- p_r_sp_curves +
@@ -1006,7 +1037,7 @@ lbl_r_sc <- attach_labels_auto(
   diff_df     = sc_diffs_r,
   group_var   = "Spacing_f",
   target_day  = 266,
-  y_positions = c(0.77, 0.67, 0.535, 0.23)
+  y_positions = c(0.77, 0.63, 0.5, 0.23)
 )
 
 p_r_sc_curves <- p_r_sc_curves +
@@ -1117,12 +1148,14 @@ key_days   <- c(59, 134, 203, 266)
 key_labels <- c("2 months", "4.5 months", "6.5 months", "9 months")
 final_day  <- 266
 
-# TABLE 1: Smooth term significance — one combined model per response
-# (each response's table now includes BOTH Species and Spacing by-smooth terms)
+# TABLE 1: Smooth term significance — all six models
 tbl1 <- bind_rows(
-  smooth_sig_table(model_h, "Height"),
-  smooth_sig_table(model_c, "Crown Area"),
-  smooth_sig_table(model_r, "CA:H Ratio")
+  smooth_sig_table(models_h$species, "Height (species model)"),
+  smooth_sig_table(models_h$spacing, "Height (spacing model)"),
+  smooth_sig_table(models_c$species, "Crown Area (species model)"),
+  smooth_sig_table(models_c$spacing, "Crown Area (spacing model)"),
+  smooth_sig_table(models_r$species, "CA:H Ratio (species model)"),
+  smooth_sig_table(models_r$spacing, "CA:H Ratio (spacing model)")
 )
 
 cat("\n╔══════════════════════════════════════════════════════════════════════╗\n")
@@ -1140,29 +1173,29 @@ write_csv(
 
 # TABLE 2: Marginal means at key timepoints
 # Height — raw scale (no back-transform)
-tbl2_h_sp <- marginal_means(model_h, "Species",   levels(df_h$Species),
+tbl2_h_sp <- marginal_means(models_h$species, "Species",   levels(df_h$Species),
                             "Spacing_f", levels(df_h$Spacing_f)[1],
                             df_h, key_days, key_labels, "Height (m)")
-tbl2_h_sc <- marginal_means(model_h, "Spacing_f", levels(df_h$Spacing_f),
+tbl2_h_sc <- marginal_means(models_h$spacing, "Spacing_f", levels(df_h$Spacing_f),
                             "Species",   levels(df_h$Species)[1],
                             df_h, key_days, key_labels, "Height (m)")
 
 # Crown — back-transform from log scale to m²
-tbl2_c_sp <- marginal_means(model_c, "Species",   levels(df_c$Species),
+tbl2_c_sp <- marginal_means(models_c$species, "Species",   levels(df_c$Species),
                             "Spacing_f", levels(df_c$Spacing_f)[1],
                             df_c, key_days, key_labels, "Crown Area (m2)",
                             backtransform = TRUE)
-tbl2_c_sc <- marginal_means(model_c, "Spacing_f", levels(df_c$Spacing_f),
+tbl2_c_sc <- marginal_means(models_c$spacing, "Spacing_f", levels(df_c$Spacing_f),
                             "Species",   levels(df_c$Species)[1],
                             df_c, key_days, key_labels, "Crown Area (m2)",
                             backtransform = TRUE)
 
 # CA:H — back-transform from log scale to m² m⁻¹
-tbl2_r_sp <- marginal_means(model_r, "Species",   levels(df_r$Species),
+tbl2_r_sp <- marginal_means(models_r$species, "Species",   levels(df_r$Species),
                             "Spacing_f", levels(df_r$Spacing_f)[1],
                             df_r, key_days, key_labels, "CA:H Ratio (m2 m-1)",
                             backtransform = TRUE)
-tbl2_r_sc <- marginal_means(model_r, "Spacing_f", levels(df_r$Spacing_f),
+tbl2_r_sc <- marginal_means(models_r$spacing, "Spacing_f", levels(df_r$Spacing_f),
                             "Species",   levels(df_r$Species)[1],
                             df_r, key_days, key_labels, "CA:H Ratio (m2 m-1)",
                             backtransform = TRUE)
@@ -1217,23 +1250,6 @@ for (resp in c("Height (m)", "Crown Area (m2)", "CA:H Ratio (m2 m-1)")) {
   }
 }
 
-# TABLE 4: Overall Model Fit Statistics
-tbl_fit <- bind_rows(
-  extract_fit_stats(model_h, "Height"),
-  extract_fit_stats(model_c, "Crown Area"),
-  extract_fit_stats(model_r, "CA:H Ratio")
-)
-
-cat("\n╔══════════════════════════════════════════════════════════════════════╗\n")
-cat("║  TABLE 4: Overall Model Fit Statistics                              ║\n")
-cat("╚══════════════════════════════════════════════════════════════════════╝\n")
-print(tbl_fit, n = Inf)
-
-write_csv(
-  tbl_fit, 
-  file.path(OUTPUT_DIR, "stats_table4_model_fits.csv")
-)
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ── DIAGNOSTICS ───────────────────────────────────────────────────────────────
@@ -1241,18 +1257,21 @@ write_csv(
 
 cat("\n── k adequacy checks ────────────────────────────────────────────────\n")
 model_list <- list(
-  "Height combined" = model_h,
-  "Crown combined"  = model_c,
-  "CA:H combined"   = model_r
+  "Height species"  = models_h$species, "Height spacing"  = models_h$spacing,
+  "Crown species"   = models_c$species, "Crown spacing"   = models_c$spacing,
+  "CA:H species"    = models_r$species, "CA:H spacing"    = models_r$spacing
 )
 for (nm in names(model_list)) {
   cat(nm, "model:\n"); print(k.check(model_list[[nm]]))
 }
 
 diag_files <- list(
-  list(model_h, file.path(OUTPUT_DIR, "diag_height_combined.png"), "steelblue"),
-  list(model_c, file.path(OUTPUT_DIR, "diag_crown_combined.png"), "#1b9e77"),
-  list(model_r, file.path(OUTPUT_DIR, "diag_cah_combined.png"), "#6a3d9a")
+  list(models_h$species, file.path(OUTPUT_DIR, "diag_height_species.png"), "steelblue"),
+  list(models_h$spacing, file.path(OUTPUT_DIR, "diag_height_spacing.png"), "darkorange"),
+  list(models_c$species, file.path(OUTPUT_DIR, "diag_crown_species.png"), "#1b9e77"),
+  list(models_c$spacing, file.path(OUTPUT_DIR, "diag_crown_spacing.png"), "#d95f02"),
+  list(models_r$species, file.path(OUTPUT_DIR, "diag_cah_species.png"), "#6a3d9a"),
+  list(models_r$spacing, file.path(OUTPUT_DIR, "diag_cah_spacing.png"), "#e31a1c")
 )
 
 for (item in diag_files) {
@@ -1285,7 +1304,7 @@ cat("    cah_species/spacing_differences.png\n")
 cat("  COMBINED GRIDS\n")
 cat("    combined_3x2_curves.png\n")
 cat("  DIAGNOSTICS\n")
-cat("    diag_height/crown/cah _combined.png\n")
+cat("    diag_height/crown/cah _species/_spacing .png\n")
 cat("\n── Done ──────────────────────────────────────────────────────────────\n")
 
 # End counter

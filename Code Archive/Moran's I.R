@@ -2,21 +2,27 @@
 # MORAN'S I SPATIAL AUTOCORRELATION — EucVision GAMM Residuals
 #
 # Tests residual spatial autocorrelation across all 26 UAV flight dates
-# for all 6 GAMM models (3 responses × 2 grouping factors).
+# for 2 COMBINED GAMM models (Crown Area and Calibrated Height).
+#
+# NOTE ON DESIGN CHANGE: earlier versions of this script tested up to 6 models,
+# then 3. The GAMM pipeline is now consolidated to ONE combined model per response 
+# (Species + Spacing by-smooths together) and the CA:H ratio model has been 
+# removed entirely. There is now only ONE residual series per response, giving
+# 26 dates x 2 responses = 52 tests. 
 #
 # RESIDUAL TYPE: Conditional residuals (observed - full fitted values).
 # predict(..., type = "response") includes all smooths AND random effects
 # (s(Plot_ID), s(Tree_ID)), so spatial clustering driven by experimental
 # design is properly accounted for before the test runs.
 #
-# Crown and CA:H fitted on log scale (Gaussian identity link), so
+# Crown fitted on log scale (Gaussian identity link), so
 # predict() returns log-scale values — exp() applied before differencing
 # against raw observed values.
 #
 # OUTPUT:
 #   - Console table
 #   - Excel workbook with results + notes sheet
-#   - 3-panel line chart (Moran's I over time by response variable)
+#   - 2-panel line chart (Moran's I over time by response variable)
 # ──────────────────────────────────────────────────────────────────────────────
 
 library(sf)
@@ -46,19 +52,14 @@ T0 <- as.Date("2025-09-01")
 # ──────────────────────────────────────────────────────────────────────────────
 # 1. ATTACH CONDITIONAL RESIDUALS
 # observed minus full model fitted values (all terms including random effects)
+# One residual column per response now, from the single combined model.
 # ──────────────────────────────────────────────────────────────────────────────
 
 # Height — raw scale, column renamed to "Height" in df_h
-df_h$resid_sp <- df_h$Height - predict(models_h$species, type = "response")
-df_h$resid_sc <- df_h$Height - predict(models_h$spacing,  type = "response")
+df_h$resid <- df_h$Height - predict(model_h, type = "response")
 
 # Crown Area — modelled on log(Crown_Area_m2); exp() to back-transform
-df_c$resid_sp <- df_c$Crown_Area_m2 - exp(predict(models_c$species, type = "response"))
-df_c$resid_sc <- df_c$Crown_Area_m2 - exp(predict(models_c$spacing,  type = "response"))
-
-# CA:H Ratio — modelled on log(Crown_Area_m2 / Calibrated_Height_m); exp() to back-transform
-df_r$resid_sp <- (df_r$Crown_Area_m2 / df_r$Calibrated_Height_m) - exp(predict(models_r$species, type = "response"))
-df_r$resid_sc <- (df_r$Crown_Area_m2 / df_r$Calibrated_Height_m) - exp(predict(models_r$spacing,  type = "response"))
+df_c$resid <- df_c$Crown_Area_m2 - exp(predict(model_c, type = "response"))
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -99,7 +100,7 @@ flight_registry <- list(
 # 3. MORAN'S I FUNCTION
 # ──────────────────────────────────────────────────────────────────────────────
 
-run_moran <- function(data, target_date, shp_path, resid_col, response_name, model_type) {
+run_moran <- function(data, target_date, shp_path, resid_col, response_name) {
   
   crowns <- st_read(shp_path, quiet = TRUE) %>%
     mutate(Tree = round(as.numeric(Tree), 2))
@@ -119,7 +120,7 @@ run_moran <- function(data, target_date, shp_path, resid_col, response_name, mod
   
   # Need at least k+1 observations to build weights matrix
   if (nrow(joined) < 7) {
-    warning(paste("Skipping", target_date, response_name, model_type, "- too few observations"))
+    warning(paste("Skipping", target_date, response_name, "- too few observations"))
     return(NULL)
   }
   
@@ -132,7 +133,6 @@ run_moran <- function(data, target_date, shp_path, resid_col, response_name, mod
     Date         = as.Date(target_date),
     days         = as.numeric(as.Date(target_date) - T0),
     Response     = response_name,
-    Model        = model_type,
     Moran_I_Stat = round(m_test$estimate["Moran I statistic"], 4),
     Expected_I   = round(m_test$estimate["Expectation"],       6),
     Variance     = round(m_test$estimate["Variance"],          8),
@@ -144,28 +144,24 @@ run_moran <- function(data, target_date, shp_path, resid_col, response_name, mod
       m_test$p.value >= 0.05                                       ~ "Non-significant",
       abs(m_test$estimate["Moran I statistic"]) < 0.1              ~ "Significant - negligible effect",
       abs(m_test$estimate["Moran I statistic"]) < 0.3              ~ "Significant - weak effect",
-      TRUE                                                          ~ "Significant - moderate/strong effect"
+      TRUE                                                         ~ "Significant - moderate/strong effect"
     )
   )
 }
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 4. RUN ALL COMBINATIONS (26 dates x 6 models = 156 tests)
+# 4. RUN ALL COMBINATIONS (26 dates x 2 combined models = 52 tests)
 # ──────────────────────────────────────────────────────────────────────────────
 
 model_specs <- list(
-  list(data = df_h, resid_col = "resid_sp", response = "Height",     model = "Species"),
-  list(data = df_h, resid_col = "resid_sc", response = "Height",     model = "Spacing"),
-  list(data = df_c, resid_col = "resid_sp", response = "Crown Area", model = "Species"),
-  list(data = df_c, resid_col = "resid_sc", response = "Crown Area", model = "Spacing"),
-  list(data = df_r, resid_col = "resid_sp", response = "CA:H Ratio", model = "Species"),
-  list(data = df_r, resid_col = "resid_sc", response = "CA:H Ratio", model = "Spacing")
+  list(data = df_c, resid_col = "resid", response = "Crown Area"),
+  list(data = df_h, resid_col = "resid", response = "Height")
 )
 
 total_tests <- length(flight_registry) * length(model_specs)
 cat(paste0("Running ", total_tests, " Moran's I tests across ",
-           length(flight_registry), " dates x ", length(model_specs), " models...\n"))
+           length(flight_registry), " dates x ", length(model_specs), " combined models...\n"))
 cat("This will take several minutes. Progress below:\n\n")
 
 results_list <- list()
@@ -174,15 +170,15 @@ counter      <- 0
 for (flight in flight_registry) {
   for (spec in model_specs) {
     counter <- counter + 1
-    cat(sprintf("  [%3d/%d] %s - %s (%s model)\n",
+    cat(sprintf("  [%3d/%d] %s - %s\n",
                 counter, total_tests,
-                flight$date, spec$response, spec$model))
+                flight$date, spec$response))
     
     row <- tryCatch(
       run_moran(spec$data, flight$date, flight$shp,
-                spec$resid_col, spec$response, spec$model),
+                spec$resid_col, spec$response),
       error = function(e) {
-        warning(paste("Error at", flight$date, spec$response, spec$model, ":", e$message))
+        warning(paste("Error at", flight$date, spec$response, ":", e$message))
         NULL
       }
     )
@@ -192,15 +188,13 @@ for (flight in flight_registry) {
 
 moran_results <- bind_rows(results_list)
 
-# Factor ordering for plots
+# Factor ordering for plots (Crown Area first, then Height)
 moran_results <- moran_results %>%
   mutate(
     Response = factor(Response,
-                      levels = c("Height", "Crown Area", "CA:H Ratio"),
-                      labels = c("Calibrated height (m)",
-                                 "Crown area (m\u00b2)",
-                                 "CA:H ratio (m\u00b2 m\u207b\u00b9)")),
-    Model = factor(Model, levels = c("Species", "Spacing"))
+                      levels = c("Crown Area", "Height"),
+                      labels = c("Crown area (m\u00b2)",
+                                 "Calibrated height (m)"))
   )
 
 
@@ -211,14 +205,14 @@ moran_results <- moran_results %>%
 cat("\n================ MORAN'S I RESULTS (CONDITIONAL RESIDUALS) ================\n")
 print(
   as.data.frame(moran_results %>%
-                  select(Date, Response, Model, Moran_I_Stat, Z_Score, p_value, Interpretation)),
+                  select(Date, Response, Moran_I_Stat, Z_Score, p_value, Interpretation)),
   row.names = FALSE
 )
 cat("===========================================================================\n\n")
 
 cat("-- Range summary ----------------------------------------------------------\n")
 moran_results %>%
-  group_by(Response, Model) %>%
+  group_by(Response) %>%
   summarise(
     Min_I   = round(min(Moran_I_Stat),  4),
     Max_I   = round(max(Moran_I_Stat),  4),
@@ -262,35 +256,27 @@ theme_thesis <- function() {
     )
 }
 
-model_line_colors <- c(
-  "Species" = "#2E4057",
-  "Spacing" = "#E05A00"
-)
+# Define specific panel colours
+color_ca <- "#D35400" # Burnt Orange
+color_h  <- "#8E44AD" # Complementing Purple
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 7. MORAN'S I TEMPORAL LINE CHART
+# 2-panel layout (Crown Area top, Calibrated Height bottom)
 # ──────────────────────────────────────────────────────────────────────────────
 
-make_moran_panel <- function(data, response_label, keep_x = FALSE) {
+make_moran_panel <- function(data, response_label, keep_x = FALSE, line_color = "#000000") {
   
   df_panel <- data %>% filter(Response == response_label)
   
-  p <- ggplot(df_panel,
-              aes(x = days, y = Moran_I_Stat,
-                  colour = Model, group = Model)) +
+  p <- ggplot(df_panel, aes(x = days, y = Moran_I_Stat)) +
     
     geom_hline(yintercept = 0,    linetype = "solid",  colour = "grey60", linewidth = 0.4) +
     geom_hline(yintercept = 0.05, linetype = "dashed", colour = "grey60", linewidth = 0.4) +
     
-    geom_line(linewidth = 0.8) +
-    geom_point(size = 1.8, shape = 16) +
-    
-    # geom_point(data = df_panel %>% filter(Significant),
-    #            aes(x = days, y = Moran_I_Stat),
-    #            shape = 1, size = 3.5, stroke = 0.8, colour = "#CC0000") +
-    
-    scale_colour_manual(values = model_line_colors, name = "Model") +
+    geom_line(colour = line_color, linewidth = 0.8) +
+    geom_point(colour = line_color, size = 1.8, shape = 16) +
     
     scale_x_continuous(
       breaks = seq(0, 270, by = 60),
@@ -319,27 +305,25 @@ make_moran_panel <- function(data, response_label, keep_x = FALSE) {
     p <- p + labs(x = "Days from 1 September 2025")
   }
   
-  if (response_label != levels(data$Response)[1]) {
-    p <- p + theme(legend.position = "none")
-  }
-  
   p
 }
 
 response_levels <- levels(moran_results$Response)
 
-p_h <- make_moran_panel(moran_results, response_levels[1], keep_x = FALSE)
-p_c <- make_moran_panel(moran_results, response_levels[2], keep_x = FALSE)
-p_r <- make_moran_panel(moran_results, response_levels[3], keep_x = TRUE)
+# Crown Area panel (Top)
+p_c <- make_moran_panel(moran_results, response_levels[1], keep_x = FALSE, line_color = color_ca)
 
-p_moran_temporal <- p_h / p_c / p_r +
-  plot_layout(heights = c(1, 1, 1))
+# Height panel (Bottom)
+p_h <- make_moran_panel(moran_results, response_levels[2], keep_x = TRUE, line_color = color_h)
+
+p_moran_temporal <- p_c / p_h +
+  plot_layout(heights = c(1, 1))
 
 ggsave(
   file.path(OUTPUT_DIR, "moran_temporal_trend.png"),
   p_moran_temporal,
   width  = 8,
-  height = 7,
+  height = 5, # Reduced from 7 to match aspect ratio of original 3-panel
   units  = "in",
   dpi    = 300
 )
@@ -394,18 +378,19 @@ style_nonsig <- createStyle(
   border = "TopBottomLeftRight", borderColour = "#CCCCCC", borderStyle = "thin"
 )
 
-# Sheet 1
+# Sheet 1 — columns: Date, days, Response, Moran_I_Stat, Expected_I, Variance,
+#           Z_Score, p_value, Significant, Interpretation  (10 cols)
 export_df <- moran_results %>%
-  select(Date, days, Response, Model,
+  select(Date, days, Response,
          Moran_I_Stat, Expected_I, Variance,
          Z_Score, p_value, Significant, Interpretation) %>%
-  arrange(Response, Model, Date)
+  arrange(Response, Date)
 
 writeData(wb, "Morans_I_All_Dates",
           "EucVision GAMM - Moran's I Spatial Autocorrelation (All Dates, Conditional Residuals)",
           startRow = 1, startCol = 1)
 addStyle(wb, "Morans_I_All_Dates", style_title, rows = 1, cols = 1)
-mergeCells(wb, "Morans_I_All_Dates", cols = 1:11, rows = 1)
+mergeCells(wb, "Morans_I_All_Dates", cols = 1:10, rows = 1)
 
 writeData(wb, "Morans_I_All_Dates", export_df,
           startRow = 2, startCol = 1,
@@ -415,9 +400,9 @@ n_data    <- nrow(export_df)
 data_rows <- 3:(n_data + 2)
 
 addStyle(wb, "Morans_I_All_Dates", style_center,
-         rows = data_rows, cols = c(1:4, 9:10), gridExpand = TRUE, stack = FALSE)
+         rows = data_rows, cols = c(1:3, 8:9), gridExpand = TRUE, stack = FALSE)
 addStyle(wb, "Morans_I_All_Dates", style_num4,
-         rows = data_rows, cols = 5:8, gridExpand = TRUE, stack = FALSE)
+         rows = data_rows, cols = 4:7, gridExpand = TRUE, stack = FALSE)
 
 for (i in seq_len(n_data)) {
   row_i    <- i + 2
@@ -425,19 +410,19 @@ for (i in seq_len(n_data)) {
   sty <- if (grepl("moderate|strong", interp_i)) style_sig_strong else
     if (grepl("weak",             interp_i)) style_sig_weak   else
       style_nonsig
-  addStyle(wb, "Morans_I_All_Dates", sty, rows = row_i, cols = 11, stack = FALSE)
+  addStyle(wb, "Morans_I_All_Dates", sty, rows = row_i, cols = 10, stack = FALSE)
 }
 
-setColWidths(wb, "Morans_I_All_Dates", cols = 1:11,
-             widths = c(13, 8, 24, 10, 13, 13, 13, 10, 10, 12, 36))
+setColWidths(wb, "Morans_I_All_Dates", cols = 1:10,
+             widths = c(13, 8, 24, 13, 13, 13, 10, 10, 12, 36))
 setRowHeights(wb, "Morans_I_All_Dates", rows = 1,         heights = 30)
 setRowHeights(wb, "Morans_I_All_Dates", rows = 2,         heights = 22)
 setRowHeights(wb, "Morans_I_All_Dates", rows = data_rows, heights = 18)
 freezePane(wb, "Morans_I_All_Dates", firstActiveRow = 3)
 
-# Sheet 2
+# Sheet 2 — range summary now grouped by Response only
 summary_df <- moran_results %>%
-  group_by(Response, Model) %>%
+  group_by(Response) %>%
   summarise(
     Min_I   = round(min(Moran_I_Stat),  4),
     Max_I   = round(max(Moran_I_Stat),  4),
@@ -449,14 +434,14 @@ summary_df <- moran_results %>%
   )
 
 writeData(wb, "Range_Summary",
-          "Moran's I Range Summary by Response and Model",
+          "Moran's I Range Summary by Response (Combined Model)",
           startRow = 1, startCol = 1)
 addStyle(wb, "Range_Summary", style_title, rows = 1, cols = 1)
-mergeCells(wb, "Range_Summary", cols = 1:8, rows = 1)
+mergeCells(wb, "Range_Summary", cols = 1:7, rows = 1)
 writeData(wb, "Range_Summary", summary_df,
           startRow = 2, startCol = 1, headerStyle = style_header)
-setColWidths(wb, "Range_Summary", cols = 1:8,
-             widths = c(28, 12, 10, 10, 10, 10, 10, 10))
+setColWidths(wb, "Range_Summary", cols = 1:7,
+             widths = c(28, 12, 10, 10, 10, 10, 10))
 setRowHeights(wb, "Range_Summary", rows = 1, heights = 30)
 setRowHeights(wb, "Range_Summary", rows = 2, heights = 22)
 setRowHeights(wb, "Range_Summary", rows = 3:(nrow(summary_df) + 2), heights = 18)
@@ -465,9 +450,10 @@ setRowHeights(wb, "Range_Summary", rows = 3:(nrow(summary_df) + 2), heights = 18
 notes_df <- data.frame(
   Item = c(
     "Script version",
+    "Model structure",
     "Residual type",
     "Why conditional residuals?",
-    "Crown / CA:H back-transformation",
+    "Crown Area back-transformation",
     "Spatial weights",
     "Dates tested",
     "Significance threshold",
@@ -476,12 +462,13 @@ notes_df <- data.frame(
   ),
   Detail = c(
     paste("Generated:", Sys.time()),
+    "One combined GAMM per response (Species by-smooth + Spacing by-smooth together), replacing an earlier separate species/spacing model pair. See 09__EucVision_GAMM_Statistics.R header for the AIC/curve-bias comparison that justified this consolidation. Total tests: 26 dates x 2 responses = 52.",
     "Conditional: observed - predict(model, type='response'). All model terms included.",
     "Default residuals() on bam() are marginal and exclude random effect fitted values. Plot_ID encodes spatial clustering by design, inflating Moran's I if not accounted for.",
-    "Crown and CA:H fitted on log scale (Gaussian identity link). predict() returns log-scale values; exp() applied before differencing against raw observed values.",
+    "Crown Area fitted on log scale (Gaussian identity link). predict() returns log-scale values; exp() applied before differencing against raw observed values.",
     "k-nearest neighbours, k = 6, row-standardised (style='W'). Based on crown polygon centroids extracted from UAV shapefiles.",
     paste("All", length(flight_registry), "UAV flight dates from 2025-09-01 to 2026-05-25"),
-    "p < 0.05 (two-sided). Open red rings on temporal plot indicate significant dates.",
+    "p < 0.05 (two-sided).",
     "Non-sig: p >= 0.05 | Negligible: |I| < 0.1 | Weak: 0.1 <= |I| < 0.3 | Moderate/Strong: |I| >= 0.3",
     "Bivand et al. (2013) Applied Spatial Data Analysis with R. Legendre & Fortin (1989) Vegetatio 80:107-138."
   )
@@ -503,10 +490,10 @@ cat(paste0("Excel saved: ", output_xlsx, "\n"))
 
 cat("\n-- Saved outputs ----------------------------------------------------------\n")
 cat("  FIGURE\n")
-cat("    moran_temporal_trend.png  (3-panel, 8 x 7 in, 300 dpi)\n")
+cat("    moran_temporal_trend.png  (2-panel, 8 x 5 in, 300 dpi)\n")
 cat("  EXCEL\n")
 cat("    EucVision_Morans_I_Results.xlsx\n")
 cat("      Sheet 1: All results (", nrow(moran_results), "rows)\n")
-cat("      Sheet 2: Range summary by response + model\n")
+cat("      Sheet 2: Range summary by response\n")
 cat("      Sheet 3: Methodology notes\n")
 cat("-- Done -------------------------------------------------------------------\n")
