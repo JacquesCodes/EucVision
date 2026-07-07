@@ -505,9 +505,13 @@ plot_diffs <- function(diff_df, y_label, fill_col = "steelblue", ncol = NULL,
          title = title, subtitle = subtitle) +
     theme_thesis() +
     theme(
-      plot.title       = element_text(size = 9, face = "bold", margin = margin(b = 2)),
-      plot.subtitle    = element_text(size = 7.5, colour = "grey40", margin = margin(b = 3)),
-      # Optional styling for the matrix headers and borders to look clean
+      # Align titles to the absolute left edge of the plot, not just the panel
+      plot.title.position = "plot", 
+      
+      # Ensure hjust = 0 for strict left-justification
+      plot.title       = element_text(size = 9, face = "bold", margin = margin(b = 2), hjust = 0),
+      plot.subtitle    = element_text(size = 7.5, colour = "grey40", margin = margin(b = 3), hjust = 0),
+      
       strip.background = element_rect(fill = "grey95", colour = "grey70", linewidth = 0.5),
       strip.text       = element_text(face = "bold", size = 8),
       panel.border     = element_rect(colour = "grey70", fill = NA, linewidth = 0.5)
