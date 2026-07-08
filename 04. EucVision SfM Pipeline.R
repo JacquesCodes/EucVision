@@ -34,7 +34,7 @@ pure_epsg_2048_wkt <- 'PROJCS["Hartebeesthoek94 / Lo19",GEOGCS["Hartebeesthoek94
 # 2. Configuration & Batch Management ####
 # ──────────────────────────────────────────────────────────────────────────────
 base_dir <- "E:/Remote Sensing Media"
-baseline_dtm_path <- "E:/Remote Sensing Media/00. Baseline DTM/Ultimate_Ensemble_Baseline_DTM.tif"
+baseline_dtm_path <- "E:/Remote Sensing Media/00. Baseline DTM/Compartments_DTM_from_UAV_ESRI_102562.tif"
 
 # Load the ultimate baseline surface model into memory as a SpatRaster
 # (We will use this as the MASTER CRS truth for all vector layers)

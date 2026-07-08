@@ -1,12 +1,12 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# EUCVISION: ULTIMATE ENSEMBLE BASELINE DTM FUSION 
+# EUCVISION: BASELINE DTM FUSION 
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
 # Email: Jacques.Stellies@gmail.com
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
 # ──────────────────────────────────────────────────────────────────────────────
 # Description: Fuses multiple temporal baseline Digital Terrain Models (DTMs) 
-#              into a single, robust "Ultimate" DTM. It uses a pixel-wise 
+#              into a single DTM. It uses a pixel-wise 
 #              temporal maximum approach to eliminate transient SfM sinkholes, 
 #              ensuring the most reliable solid ground model is preserved.
 # ──────────────────────────────────────────────────────────────────────────────
@@ -18,7 +18,7 @@ library(terra)   # Core package for spatial raster operations
 library(tictoc)  # For tracking script execution time
 
 tic()
-print("Fusing multiple temporal DTMs into an Ultimate Baseline DTM...")
+print("Fusing multiple temporal DTMs into a Single DTM...")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 2. Configuration & Path Management ####
@@ -33,8 +33,8 @@ path_dtm_2 <- "E:/Remote Sensing Media/04. 07 November 2025/05b. Baseline Plot D
 path_dtm_3 <- "E:/Remote Sensing Media/05. 14 November 2025/05b. Baseline Plot DTMs/Master_Baseline_DTM_Single_14_November_2025.tif"
 
 # Define the final output destination
-# output_path <- "E:/Remote Sensing Media/00. Baseline DTM/Ultimate_Ensemble_Baseline_DTM.tif"
-output_path <- "E:/Remote Sensing Media/00. Baseline DTM/IMPACT_OAL_Baseline_DTM.tif"
+
+output_path <- "E:/Remote Sensing Media/00. Baseline DTM/IMPACT_OAL_DTM.tif"
 
 # Ensure the output directory exists before attempting to write out
 if (!dir.exists(dirname(output_path))) dir.create(dirname(output_path), recursive = TRUE)
@@ -77,5 +77,5 @@ print("Writing out final surface model to disk...")
 # Export the fused Baseline DTM
 terra::writeRaster(ultimate_dtm, filename = output_path, overwrite = TRUE)
 
-print(paste("Ultimate Ensemble DTM saved to:", output_path))
+print(paste("Single DTM saved to:", output_path))
 toc()

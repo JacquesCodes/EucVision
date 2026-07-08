@@ -42,7 +42,7 @@ Sys.setlocale("LC_TIME", "C")
 # 2. Configuration & Path Management ####
 # ──────────────────────────────────────────────────────────────────────────────
 base_dir <- "E:/Remote Sensing Media"
-baseline_dtm_path <- "E:/Remote Sensing Media/00. Baseline DTM/Ultimate_Ensemble_Baseline_DTM.tif"
+baseline_dtm_path <- "E:/Remote Sensing Media/00. Baseline DTM/Compartments_DTM_from_UAV_ESRI_102562.tif"
 
 baseline_dtm <- rast(baseline_dtm_path)
 

@@ -27,7 +27,7 @@ library(terra)
 # 2. Configuration & Path Management ####
 # ──────────────────────────────────────────────────────────────────────────────
 # Define your "Golden Baseline" date where ground is most visible
-date_folder <- "03. 30 October 2025"
+date_folder <- "30. 30 June 2026 (ALS)"
 
 # Extract the date part and create a safe filename format
 # (e.g., "17. 02 March 2026" -> "02_March_2026")
