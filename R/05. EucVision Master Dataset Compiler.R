@@ -31,11 +31,11 @@ Sys.setlocale("LC_TIME", "C")
 src_base_dir <- "E:/Remote Sensing Media"
 dest_backup_dir <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/05. Crown Metrics"
 
-dest_master_csv <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data analysis/01. Master Dataset.csv"
-field_measurements_csv <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data analysis/02. Field Measurements.csv"
+dest_master_csv <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data Analysis/01. Master Dataset.csv"
+field_measurements_csv <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data Analysis/02. Field Measurements.csv"
 
 # --- ADDED: Path to your Master Template to track the Dead Trees ---
-template_csv <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data analysis/00. Dataset template.csv"
+template_csv <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data Analysis/00. Dataset template.csv"
 
 # Load the master template once into memory
 if (file.exists(template_csv)) {

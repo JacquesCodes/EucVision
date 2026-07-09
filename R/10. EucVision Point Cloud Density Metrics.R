@@ -405,7 +405,7 @@ print("================================================================")
 print(" COMPILING ALL SITE-WIDE METRICS INTO MASTER CSV...")
 print("================================================================")
 
-master_output_dir <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data analysis"
+master_output_dir <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data Analysis"
 master_output_path <- file.path(master_output_dir, "06. Planar Coverage and Point Density.csv")
 
 # Create master directory if it doesn't exist

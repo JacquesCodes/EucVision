@@ -68,8 +68,8 @@ if (!is.null(target_date_override)) {
 }
 
 # --- MERGE DESTINATION PATHS ---
-dest_master_csv <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data analysis/01. DSM - DTM = CHM/01. Master Dataset_RasterMath.csv"
-field_measurements_csv <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data analysis/02. Field Measurements.csv"
+dest_master_csv <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data Analysis/01. DSM - DTM = CHM/01. Master Dataset_RasterMath.csv"
+field_measurements_csv <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data Analysis/02. Field Measurements.csv"
 dest_backup_dir <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/05. Crown Metrics/01. DSM - DTM = CHM Backups"
 
 # ──────────────────────────────────────────────────────────────────────────────
