@@ -27,9 +27,9 @@ library(future)
 # 1. Configuration & Spatial Data
 # ──────────────────────────────────────────────────────────────────────────────
 base_dir <- "E:/Remote Sensing Media"
-baseline_dtm_path <- "E:/Remote Sensing Media/00. Baseline DTM/Compartments_DTM_from_UAV_ESRI_102562.tif"
-plots_shp_path <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/1. LAScatalog Plot Boundaries/LAScatalog_Plot_Boundaries_ESRI_102562.shp"
-impact_bounds_path <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/4. IMPACT Plot & Compartment Boundaries/IMPACT_Plot_&_Compartment_Boundaries_ESRI_102562.shp"
+baseline_dtm_path <- "E:/Remote Sensing Media/00. Baseline DTM/Compartments_DTM_from_UAV_EPSG_2048.tif"
+plots_shp_path <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/01. LAScatalog Plot Boundaries/LAScatalog_Plot_Boundaries_EPSG_2048.shp"
+impact_bounds_path <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/04. IMPACT Plot & Compartment Boundaries/IMPACT_Plot_&_Compartment_Boundaries_EPSG_2048.shp"
 
 raster_res <- 0.25    # 0.25m pixels (0.0625 m^2 per pixel)
 z_threshold <- 0.3    
@@ -41,7 +41,7 @@ modern_layout_start_date <- as.Date("2026-03-23")
 # Folder Exclusion List
 exclude_list <- c("000. Projects", "00. Baseline DTM", "00. Dataset Template", 
                   "01. 25 February 2025","02. 01 September 2025", "07. December 2025 (TLS)",
-                  "17. 02 March 2026","17. 02 March 2026 2.4","17. 02 March 2026 19.2",
+                  "17. 02 March 2026 Single Grid","17. 02 March 2026 2.4","17. 02 March 2026 19.2",
                   "20. 23 March 2026 0.6cm","30. 30 June 2026 (ALS)")
 
 # ADDED: Target Date Override for testing

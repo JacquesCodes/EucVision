@@ -7,7 +7,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # Description: Automates the plot-level processing of multiple temporal SfM 
 #              point cloud datasets. It iteratively clips raw point clouds to 
-#              plot boundaries, normalizes them against an ultimate baseline DTM, 
+#              plot boundaries, normalizes them against a baseline DTM, 
 #              generates Canopy Height Models (CHMs), extracts maximum tree 
 #              heights, and enforces strict EPSG:2048 CRS on metric outputs.
 # ──────────────────────────────────────────────────────────────────────────────
@@ -34,7 +34,7 @@ pure_epsg_2048_wkt <- 'PROJCS["Hartebeesthoek94 / Lo19",GEOGCS["Hartebeesthoek94
 # 2. Configuration & Batch Management ####
 # ──────────────────────────────────────────────────────────────────────────────
 base_dir <- "E:/Remote Sensing Media"
-baseline_dtm_path <- "E:/Remote Sensing Media/00. Baseline DTM/Compartments_DTM_from_UAV_ESRI_102562.tif"
+baseline_dtm_path <- "E:/Remote Sensing Media/00. Baseline DTM/Compartments_DTM_from_UAV_EPSG_2048.tif"
 
 # Load the ultimate baseline surface model into memory as a SpatRaster
 # (We will use this as the MASTER CRS truth for all vector layers)
@@ -44,7 +44,7 @@ baseline_dtm <- rast(baseline_dtm_path)
 # Set to a specific folder name to run only that dataset (e.g., "01. 25 February 2025") 
 # Set to NULL to run the full batch process.
 # target_date_override <- NULL
-target_date_override <- "20. 23 March 2026 0.6cm"
+target_date_override <- "31. 26 June 2026 Oblique"
 
 # Disk Space Management: TRUE retains intermediate point clouds, FALSE deletes them.
 keep_intermediate_dirs <- FALSE
@@ -77,7 +77,7 @@ if (!is.null(target_date_override)) {
 print("Loading static spatial data and initializing parallel processing...")
 
 # st_read loads the vector data. quiet = TRUE suppresses messy console output.
-plots_buffered_unsorted <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/1. LAScatalog Plot Boundaries/LAScatalog_Plot_Boundaries_ESRI_102562.shp", quiet = TRUE)
+plots_buffered_unsorted <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/01. LAScatalog Plot Boundaries/LAScatalog_Plot_Boundaries_EPSG_2048.shp", quiet = TRUE)
 
 # Force the clipping polygons to perfectly inherit the master DTM's spatial grid (CRS)
 st_crs(plots_buffered_unsorted) <- st_crs(baseline_dtm)
@@ -211,7 +211,7 @@ for (folder_path in dataset_folders) {
   # 6. Height Normalization ####
   # ────────────────────────────────────────────────────────────────────────────
   tic("Normalization complete")
-  print("Normalizing point clouds against the Ultimate Baseline DTM...")
+  print("Normalizing point clouds against the Baseline DTM...")
   
   # opt_independent_files = TRUE treats each clipped plot as isolated. No need to look at overlaps anymore.
   opt_independent_files(ctg_clipped) <- TRUE

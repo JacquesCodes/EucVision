@@ -37,12 +37,12 @@ terraOptions(memfrac = 0.75, tempdir = temp_dir)
 # --- INPUT/OUTPUT CONFIGURATION ---
 # 1. Define the target plot boundaries for cropping the viewing extent
 
-shp_path <-"C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/13. Plot 27-28 Shapefile/Plot_27-28_ESRI_102562.shp"
-# shp_path <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/12. Plot 37-40 Shapefile/Plot_37-40_ESRI_102562.shp"
+shp_path <-"C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/13. Plot 27-28 Shapefile/Plot_27-28_EPSG_2048.shp"
+# shp_path <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/12. Plot 37-40 Shapefile/Plot_37-40_EPSG_2048.shp"
 plot_shp <- st_read(shp_path, quiet = TRUE)
 
 # 2. Define the static Normal Plot Boundaries that will be overlaid
-normal_plot_path <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/2. Plot Boundaries/Normal_Plot_Boundaries_ESRI_102562.shp"
+normal_plot_path <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/02. Plot Boundaries/Normal_Plot_Boundaries_EPSG_2048.shp"
 normal_plots <- st_read(normal_plot_path, quiet = TRUE)
 
 # Directory to save the temporary clipped PNGs and the final video outputs

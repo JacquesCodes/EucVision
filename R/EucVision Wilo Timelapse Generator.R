@@ -26,7 +26,7 @@ dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 print("Loading spatial data for the entire site...")
 
 # Load static Normal Plot Boundaries
-normal_plot_path <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/2. Plot Boundaries/Normal_Plot_Boundaries_EPSG_2048.shp"
+normal_plot_path <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/02. Plot Boundaries/Normal_Plot_Boundaries_EPSG_2048.shp"
 target_plots <- st_read(normal_plot_path, quiet = TRUE)
 
 # Load the newly merged Base TIFF

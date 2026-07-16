@@ -54,14 +54,14 @@ plan(multisession, workers = 6)
 # 3. Spatial Data Loading & Boundary Definition ####
 # ──────────────────────────────────────────────────────────────────────────────
 # Load your final mask boundary to cookie-cut the site at the very end
-boundary <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/4. IMPACT Plot & Compartment Boundaries/IMPACT_Plot_&_Compartment_Boundaries_EPSG_2048.shp")
+boundary <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/04. IMPACT Plot & Compartment Boundaries/IMPACT_Plot_&_Compartment_Boundaries_EPSG_2048.shp")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 3.5. Point Cloud Cropping (Fixing Sparse Edges) ####
 # ──────────────────────────────────────────────────────────────────────────────
 
 # Load the new OAL boundary to clip the raw data
-oal_boundary <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/5. IMPACT OAL Boundaries/IMPACT_Boundaries_EPSG_2048.shp")
+oal_boundary <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/05. IMPACT OAL Boundaries/IMPACT_Boundaries_EPSG_2048.shp")
 
 # Buffer the boundary slightly (5m) to ensure we don't create artificial edge artifacts inside the study plots
 oal_boundary_buffered <- st_buffer(oal_boundary, 5)

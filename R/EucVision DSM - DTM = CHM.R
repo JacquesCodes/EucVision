@@ -42,7 +42,7 @@ Sys.setlocale("LC_TIME", "C")
 # 2. Configuration & Path Management ####
 # ──────────────────────────────────────────────────────────────────────────────
 base_dir <- "E:/Remote Sensing Media"
-baseline_dtm_path <- "E:/Remote Sensing Media/00. Baseline DTM/Compartments_DTM_from_UAV_ESRI_102562.tif"
+baseline_dtm_path <- "E:/Remote Sensing Media/00. Baseline DTM/Compartments_DTM_from_UAV_EPSG_2048.tif"
 
 baseline_dtm <- rast(baseline_dtm_path)
 
@@ -76,7 +76,7 @@ dest_backup_dir <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skrips
 # 3. Static Spatial Data Loading ####
 # ──────────────────────────────────────────────────────────────────────────────
 
-plots_buffered_unsorted <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/1. LAScatalog Plot Boundaries/LAScatalog_Plot_Boundaries_ESRI_102562.shp")
+plots_buffered_unsorted <- st_read("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/02. QGIS Shapefiles/1. LAScatalog Plot Boundaries/LAScatalog_Plot_Boundaries_EPSG_2048.shp")
 
 # THE CLIPPING BOUNDARIES
 # Force the clipping polygons to perfectly inherit the master DTM's spatial grid
