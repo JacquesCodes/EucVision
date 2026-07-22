@@ -2,7 +2,6 @@
 # EUCVISION: BATCH SPATIAL DATA MERGING & CSV INTEGRATION PIPELINE
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
-# Email: Jacques.Stellies@gmail.com
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
 # ──────────────────────────────────────────────────────────────────────────────
 # Description: Automates the batch processing of multiple dates. Aggregates 

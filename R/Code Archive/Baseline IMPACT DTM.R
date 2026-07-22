@@ -2,7 +2,6 @@
 # EUCVISION: BASELINE STAND-LEVEL DTM GENERATION PIPELINE 
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
-# Email: Jacques.Stellies@gmail.com
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
 # Description: Processes juvenile Eucalyptus SfM point clouds to classify ground
 #              points and generate a 0.05m high-resolution Digital Terrain Model.

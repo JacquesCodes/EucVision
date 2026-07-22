@@ -2,7 +2,6 @@
 # EUCVISION: SPATIAL MAPPING & CHM VISUALIZATION PIPELINE ####
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
-# Email: Jacques.Stellies@gmail.com
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
 # ──────────────────────────────────────────────────────────────────────────────
 # Description: Functions as a targeted visual inspection and cartographic mapping 

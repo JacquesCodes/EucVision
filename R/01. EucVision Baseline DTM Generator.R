@@ -2,7 +2,6 @@
 # EUCVISION: END-TO-END BASELINE SITE-LEVEL DTM GENERATION 
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
-# Email: Jacques.Stellies@gmail.com
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
 # ──────────────────────────────────────────────────────────────────────────────
 # Description: Processes raw baseline point clouds across the entire site using 

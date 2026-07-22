@@ -2,7 +2,6 @@
 # EUCVISION: DATA VISUALIZATION & ITD (INDIVIDUAL TREE DETECTION) PIPELINE ####
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
-# Email: Jacques.Stellies@gmail.com
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
 # ──────────────────────────────────────────────────────────────────────────────
 # Description: Serves as an interactive visual inspection and diagnostic tool 

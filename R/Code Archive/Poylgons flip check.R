@@ -2,7 +2,6 @@
 # EUCVISION: SPATIAL GRID REVERSAL QA/QC PIPELINE (METRICS VERSION)
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
-# Email: Jacques.Stellies@gmail.com
 # Project: EucXylo (https://eucxylo.sun.ac.za/) 
 # ──────────────────────────────────────────────────────────────────────────────
 # Description: This script loops through temporal SfM datasets and compares the 

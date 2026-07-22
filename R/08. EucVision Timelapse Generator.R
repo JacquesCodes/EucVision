@@ -2,7 +2,6 @@
 # EUCVISION: TIME-LAPSE GENERATION & SPATIAL OVERLAY PIPELINE ####
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
-# Email: Jacques.Stellies@gmail.com
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
 # ──────────────────────────────────────────────────────────────────────────────
 # Description: Automates the generation of a high-resolution time-lapse video 

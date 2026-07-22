@@ -2,7 +2,6 @@
 # EUCVISION: BATCH PLOT-LEVEL SfM PROCESSING PIPELINE
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
-# Email: Jacques.Stellies@gmail.com
 # Project: EucXylo (https://eucxylo.sun.ac.za/) 
 # ──────────────────────────────────────────────────────────────────────────────
 # Description: Automates the plot-level processing of multiple temporal SfM 

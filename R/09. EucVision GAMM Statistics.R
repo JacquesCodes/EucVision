@@ -1049,7 +1049,7 @@ cat("\nAssembling 3x2 combined grid (independent Y-axes)...\n")
 
 # 1. Helper function to strip axes and titles on inner plots
 clean_panel <- function(p, keep_legend = FALSE, keep_x = FALSE, keep_y = TRUE,
-                        keep_subtitle = FALSE) {
+                        keep_subtitle = FALSE, tag = NULL) {
   p <- p + theme(plot.margin = margin(t = 5, r = 5, b = 5, l = 5))
   
   if (!keep_legend)  p <- p + theme(legend.position  = "none")
@@ -1058,9 +1058,17 @@ clean_panel <- function(p, keep_legend = FALSE, keep_x = FALSE, keep_y = TRUE,
                                     axis.ticks.x     = element_blank())
   if (!keep_y)       p <- p + theme(axis.title.y     = element_blank())
   
-  # Always strip the individual plot title; optionally strip the subtitle too
   p <- p + theme(plot.title = element_blank())
   if (!keep_subtitle) p <- p + theme(plot.subtitle = element_blank())
+  
+  # Manual panel tag, anchored to the panel's own top-left corner via
+  # -Inf/Inf — same annotate() + family/fontface combo already confirmed
+  # to render bold correctly in font_test.png.
+  if (!is.null(tag)) {
+    p <- p + annotate("text", x = -Inf, y = Inf, label = tag,
+                      family = "Calibri", fontface = "bold",
+                      size = 4.5, hjust = -0.3, vjust = 1.5)
+  }
   
   return(p)
 }
@@ -1069,20 +1077,17 @@ clean_panel <- function(p, keep_legend = FALSE, keep_x = FALSE, keep_y = TRUE,
 #    Only c_sp_3x2 (top-left) keeps its subtitle — it reads "Left column: Species-controlled"
 #    Re-write that subtitle to serve as a column-header hint for the reader
 c_sp_3x2 <- clean_panel(p_c_sp_curves, keep_legend = TRUE,  keep_x = FALSE,
-                        keep_y = TRUE,  keep_subtitle = FALSE)
-
+                        keep_y = TRUE,  keep_subtitle = FALSE, tag = "(a)")
 c_sc_3x2 <- clean_panel(p_c_sc_curves, keep_legend = TRUE,  keep_x = FALSE,
-                        keep_y = FALSE, keep_subtitle = FALSE)
-
+                        keep_y = FALSE, keep_subtitle = FALSE, tag = "(b)")
 h_sp_3x2 <- clean_panel(p_h_sp_curves, keep_legend = FALSE, keep_x = FALSE,
-                        keep_y = TRUE,  keep_subtitle = FALSE)
+                        keep_y = TRUE,  keep_subtitle = FALSE, tag = "(c)")
 h_sc_3x2 <- clean_panel(p_h_sc_curves, keep_legend = FALSE, keep_x = FALSE,
-                        keep_y = FALSE, keep_subtitle = FALSE)
-
+                        keep_y = FALSE, keep_subtitle = FALSE, tag = "(d)")
 r_sp_3x2 <- clean_panel(p_r_sp_curves, keep_legend = FALSE, keep_x = TRUE,
-                        keep_y = TRUE,  keep_subtitle = FALSE)
+                        keep_y = TRUE,  keep_subtitle = FALSE, tag = "(e)")
 r_sc_3x2 <- clean_panel(p_r_sc_curves, keep_legend = FALSE, keep_x = TRUE,
-                        keep_y = FALSE, keep_subtitle = FALSE)
+                        keep_y = FALSE, keep_subtitle = FALSE, tag = "(f)")
 
 # 3. Assemble and annotate with a single main title
 p_combined_3x2 <- (c_sp_3x2 | c_sc_3x2) /
@@ -1092,24 +1097,17 @@ p_combined_3x2 <- (c_sp_3x2 | c_sc_3x2) /
     title = paste0("GAMM-fitted growth trajectories \u2014 ", POPULATION_LABEL),
     subtitle = paste0("Left: Species comparisons (Simulated at ", BASELINE_SPACING, ")  |  Right: Spacing comparisons (Simulated for ", BASELINE_SPECIES, ")"),
     theme = theme(
-      plot.title = element_text(
-        size   = 10,
-        face   = "bold",
-        hjust  = 0.5,
-        margin = margin(b = 2)
-      ),
-      plot.subtitle = element_text(
-        size   = 7.5,
-        colour = "grey40",
-        hjust  = 0.5,
-        margin = margin(b = 4)
-      )
+      plot.title = element_text(size = 10, face = "bold", hjust = 0.5, margin = margin(b = 2)),
+      plot.subtitle = element_text(size = 7.5, colour = "grey40", hjust = 0.5, margin = margin(b = 4))
     )
   )
 
 # Height bumped by 0.2 in to give the main title breathing room
-ggsave(file.path(OUTPUT_DIR, "combined_3x2_curves.png"), p_combined_3x2,
-       width = 6.30, height = 6.7, units = "in", dpi = 300)
+ggsave(
+  file.path(OUTPUT_DIR, "combined_3x2_curves.png"), p_combined_3x2,
+  width = 6.30, height = 6.7, units = "in", dpi = 300,
+  device = ragg::agg_png
+)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # STATISTICS SUMMARY TABLES ####

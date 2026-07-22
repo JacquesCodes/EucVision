@@ -2,7 +2,6 @@
 # EUCVISION: TLS POINT CLOUD PREPROCESSING & SPATIAL CORRECTION PIPELINE ####
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
-# Email: Jacques.Stellies@gmail.com
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
 # ──────────────────────────────────────────────────────────────────────────────
 # Description: Automates the preprocessing and spatial correction of raw 

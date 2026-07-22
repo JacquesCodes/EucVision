@@ -2,7 +2,6 @@
 # EUCVISION: PLOT-LEVEL LiDAR POINT CLOUD PROCESSING PIPELINE USING LAS ####
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
-# Email: Jacques.Stellies@gmail.com
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
 # ──────────────────────────────────────────────────────────────────────────────
 # Description: Automates the plot-level processing of raw point clouds.
@@ -176,7 +175,7 @@ ctg_classified <- classify_ground(
 
 # LidR creator recommends using the PTD algorithm exclusively from March 2026.
 
-# # SCF: Tuned Simulated cloth function for SfM individual plots 
+# # CSF: Tuned Cloth Simulation Filtering for SfM individual plots 
 # ctg_classified <- classify_ground(
 #   ctg_clipped,           
 #   csf(sloop_smooth = TRUE, 
@@ -184,7 +183,7 @@ ctg_classified <- classify_ground(
 #       cloth_resolution = 1, 
 #       time_step = 1))
 
-# SCF Parameter Configuration Notes:
+# CSF Parameter Configuration Notes:
 # Class_threshold: The distance to the simulated cloth to classify a point into ground/non-ground. 
 #  - Default is 0.5. Must be smaller than the smallest tree. 0.01 preferred for best height estimations.
 #  - The higher the value, the higher the ground classifications become.

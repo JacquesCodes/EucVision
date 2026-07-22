@@ -2,7 +2,6 @@
 # EUCVISION: LiDAR POINT CLOUD PROCESSING & CANOPY HEIGHT EXTRACTION PIPELINE ####
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
-# Email: Jacques.Stellies@gmail.com
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
 # ──────────────────────────────────────────────────────────────────────────────
 

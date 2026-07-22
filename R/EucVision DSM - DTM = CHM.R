@@ -2,7 +2,6 @@
 # EUCVISION: BATCH PLOT-LEVEL DSM-DTM PROCESSING & DATA MERGING PIPELINE ####
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
-# Email: Jacques.Stellies@gmail.com
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
 # ──────────────────────────────────────────────────────────────────────────────
 # Description: Automates a two-part raster math and data consolidation workflow. 

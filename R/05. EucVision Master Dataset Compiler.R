@@ -2,7 +2,6 @@
 # EUCVISION: DATA EXTRACTION, MERGING, & CLEANING PIPELINE ####
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
-# Email: Jacques.Stellies@gmail.com
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
 # ──────────────────────────────────────────────────────────────────────────────
 # Description: Automates the extraction, consolidation, and spatial alignment of 
@@ -54,14 +53,13 @@ exclude_list <- c("000. Projects",
                   "00. Baseline DTM",
                   "00. Dataset Template", 
                   "07. December 2025 (TLS)",
-                  "17. 02 March 2026 0.6",
                   "17. 02 March 2026 2.4",
                   "17. 02 March 2026 4.8",
                   "17. 02 March 2026 19.2",
-                  "17. 03 March 2026 (Multispectral)",
+                  "17. 02 March 2026 Double Grid",
                   "20. 23 March 2026 0.6cm",
-                  "20. 24 March 2026 (Multispectral)",
-                  "30. 30 June 2026 (ALS)")
+                  "31. 26 June 2026 Oblique",
+                  "31. 30 June 2026 (ALS)")
 
 # Scan the base directory and filter for valid date folders
 folders <- list.dirs(src_base_dir, recursive = FALSE)

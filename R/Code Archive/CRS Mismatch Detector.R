@@ -2,7 +2,6 @@
 # EUCVISION: SPATIAL AUDIT & CRS MISMATCH DETECTOR ####
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
-# Email: Jacques.Stellies@gmail.com
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
 # ──────────────────────────────────────────────────────────────────────────────
 # Description: Recursively scans a target directory for all .shp and .tif files.

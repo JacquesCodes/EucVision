@@ -2,7 +2,6 @@
 # EUCVISION: PLOT-LEVEL LiDAR POINT CLOUD PROCESSING PIPELINE USING DTM ####
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
-# Email: Jacques.Stellies@gmail.com
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
 # ──────────────────────────────────────────────────────────────────────────────
 

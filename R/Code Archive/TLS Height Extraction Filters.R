@@ -2,7 +2,6 @@
 # EUCVISION: DYNAMIC TLS HEIGHT EXTRACTION & FILTERING PIPELINE ####
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
-# Email: Jacques.Stellies@gmail.com
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
 # ──────────────────────────────────────────────────────────────────────────────
 # Description: Automates the extraction of maximum tree heights from plot-level 

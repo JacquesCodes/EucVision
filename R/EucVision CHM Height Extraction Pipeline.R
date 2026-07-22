@@ -2,7 +2,6 @@
 # EUCVISION: BATCH CHM HEIGHT EXTRACTION PIPELINE
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
-# Email: Jacques.Stellies@gmail.com
 # Project: EucXylo (https://eucxylo.sun.ac.za/) 
 # ──────────────────────────────────────────────────────────────────────────────
 # Description: Automates the extraction of maximum canopy heights from temporal

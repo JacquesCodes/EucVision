@@ -2,7 +2,6 @@
 # EUCVISION: BASELINE DTM FUSION 
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
-# Email: Jacques.Stellies@gmail.com
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
 # ──────────────────────────────────────────────────────────────────────────────
 # Description: Fuses multiple temporal baseline Digital Terrain Models (DTMs) 
