@@ -265,61 +265,129 @@ spacing_display <- c(
 # SHARED FUNCTIONS ####
 # ──────────────────────────────────────────────────────────────────────────────
 
-# ── Fit a single combined GAMM (Species + Spacing by-smooths together) ────────
-fit_gamm_combined <- function(df, response_col) {
-  cat("  Fitting combined model...\n")
-  bam(
-    as.formula(paste0(response_col, " ~
+# ── Fit a single combined GAMM, optionally with group-specific residual variance ──
+# var_groups = NULL           → original constant-variance fit (unchanged behaviour)
+# var_groups = c("Species", "Spacing_f") → two-stage variance-weighted fit:
+#   pass 1 estimates residual variance per group cell, pass 2 refits with
+#   prior weights w = 1/sigma^2_group. bam() assumes Var(y) = sigma^2 / w,
+#   so this gives each cell its own residual variance rather than pooling one
+#   global value. This is the Welch-analogue for a GAMM: unequal-variance
+#   groups no longer borrow each other's scatter when SEs are computed.
+fit_gamm_combined <- function(df, response_col, var_groups = NULL, n_iter = 2) {
+  
+  form <- as.formula(paste0(response_col, " ~
       s(days, k = 12, bs = 'cr') +
       s(days, by = Species,   k = 10, bs = 'tp') +
       s(days, by = Spacing_f, k = 10, bs = 'tp') +
       Species +
       Spacing_f +
       s(Plot_ID, bs = 're') +
-      s(Tree_ID, bs = 're')")),
-    data     = df,
-    family   = gaussian(),
-    method   = "fREML",
-    discrete = TRUE
-  )
+      s(Tree_ID, bs = 're')"))
+  
+  cat("  Pass 1: constant-variance fit...\n")
+  df$.w <- 1
+  m <- bam(form, data = df, family = gaussian(),
+           method = "fREML", discrete = TRUE, weights = .w)
+  
+  if (is.null(var_groups)) {
+    attr(m, "var_groups") <- NULL
+    return(m)
+  }
+  
+  grp <- interaction(df[var_groups], drop = TRUE)
+  
+  for (i in seq_len(n_iter)) {
+    r <- residuals(m, type = "response")
+    
+    # Mean squared residual per group cell = that cell's residual variance.
+    # Normalised by the geometric mean so weights centre near 1 and the
+    # overall scale parameter stays interpretable.
+    v <- tapply(r^2, grp, mean)
+    v <- v / exp(mean(log(v)))
+    
+    df$.w <- 1 / as.numeric(v[as.character(grp)])
+    
+    cat("  Pass ", i + 1, ": variance-weighted refit ",
+        "(weight range ", round(min(df$.w), 3), " to ",
+        round(max(df$.w), 3), ")...\n", sep = "")
+    
+    m <- bam(form, data = df, family = gaussian(),
+             method = "fREML", discrete = TRUE, weights = .w)
+  }
+  
+  attr(m, "var_groups")  <- var_groups
+  attr(m, "group_var")   <- v
+  m
 }
 
+# ── Duan (1983) nonparametric smearing factors ────────────────────────────────
+# For a model fitted on the log scale, E[exp(y)] = exp(mu) * mean(exp(resid)).
+# Nonparametric: makes no lognormality assumption, which matters here because
+# log(Crown) and log(CA:H) are left-skewed. Computed per variance group so that
+# groups with wider residual spread get a correspondingly larger correction.
+smearing_factors <- function(model, df) {
+  r  <- residuals(model, type = "response")
+  vg <- attr(model, "var_groups")
+  
+  if (is.null(vg)) {
+    return(list(groups = NULL, factors = c(.global = mean(exp(r)))))
+  }
+  grp <- interaction(df[vg], drop = TRUE)
+  list(groups = vg, factors = tapply(exp(r), grp, mean))
+}
 
-# ── Predict, with optional delta-method back-transformation from log scale ────
-# backtransform = TRUE  → use for Crown and CA:H (fitted on log scale)
-# backtransform = FALSE → use for Height (fitted on raw scale)
-predict_traj <- function(model, newdata, backtransform = FALSE) {
+# Look up the right factor for each row of a prediction grid.
+# Cells absent from the data (e.g. Grandis clone x 5x5m) fall back to the
+# geometric mean of the observed factors.
+smear_lookup <- function(smear, newdata) {
+  if (is.null(smear))         return(rep(1, nrow(newdata)))
+  if (is.null(smear$groups))  return(rep(as.numeric(smear$factors[1]), nrow(newdata)))
+  
+  g <- interaction(newdata[smear$groups], drop = FALSE)
+  k <- as.numeric(smear$factors[as.character(g)])
+  k[is.na(k)] <- exp(mean(log(smear$factors)))
+  k
+}
+
+# ── Predict, with optional Duan smearing back-transformation from log scale ───
+# backtransform = TRUE  → Crown and CA:H (fitted on log scale)
+# backtransform = FALSE → Height (fitted on raw scale)
+# The smearing factor scales the point estimate AND both CI bounds by the same
+# constant, so the interval stays consistent with the point estimate and keeps
+# its asymmetry on the response scale.
+predict_traj <- function(model, newdata, backtransform = FALSE, smear = NULL) {
   
   preds <- predict(
     model,
     newdata = newdata,
-    se.fit = TRUE,
-    type = "response",
+    se.fit  = TRUE,
+    type    = "link",
     exclude = c("s(Plot_ID)", "s(Tree_ID)")
   )
   
-  fit_raw <- as.numeric(preds$fit)
-  se_raw  <- as.numeric(preds$se.fit)
+  fit_link <- as.numeric(preds$fit)
+  se_link  <- as.numeric(preds$se.fit)
   
   if (backtransform) {
-    fit_out <- exp(fit_raw + 0.5 * se_raw^2)  
-    lwr_out <- exp(fit_raw - 1.96 * se_raw)   
-    upr_out <- exp(fit_raw + 1.96 * se_raw)
+    k       <- smear_lookup(smear, newdata)
+    fit_out <- k * exp(fit_link)
+    lwr_out <- k * exp(fit_link - 1.96 * se_link)
+    upr_out <- k * exp(fit_link + 1.96 * se_link)
   } else {
-    fit_out <- fit_raw
-    lwr_out <- fit_raw - 1.96 * se_raw
-    upr_out <- fit_raw + 1.96 * se_raw
+    fit_out <- fit_link
+    lwr_out <- fit_link - 1.96 * se_link
+    upr_out <- fit_link + 1.96 * se_link
   }
   
   newdata |>
-    mutate(fit = fit_out, lwr = lwr_out, upr = upr_out, se = se_raw)
+    mutate(fit = fit_out, lwr = lwr_out, upr = upr_out, se = se_link)
 }
 
 # ── Marginal Means Table Function ─────────────────────────────────────────────
 marginal_means <- function(model, group_var, group_levels,
                            fixed_var, fixed_level,
                            df_ref, key_days, key_labels, response_label,
-                           backtransform = FALSE) {
+                           backtransform = FALSE, smear = NULL) {
   
   pred_base <- tibble(
     !!group_var := factor(group_levels, levels = levels(df_ref[[group_var]])),
@@ -330,44 +398,62 @@ marginal_means <- function(model, group_var, group_levels,
   )
   
   map2_dfr(key_days, key_labels, function(d, lbl) {
-    nd      <- pred_base |> mutate(days = d)
+    nd <- pred_base |> mutate(days = d)
     
-    preds   <- predict(model, newdata = nd, se.fit = TRUE,
-                       type = "response",
-                       exclude = c("s(Plot_ID)", "s(Tree_ID)"))
+    preds <- predict(model, newdata = nd, se.fit = TRUE, type = "link",
+                     exclude = c("s(Plot_ID)", "s(Tree_ID)"))
     
-    fit_raw <- as.numeric(preds$fit)
-    se_raw  <- as.numeric(preds$se.fit)
+    fit_link <- as.numeric(preds$fit)
+    se_link  <- as.numeric(preds$se.fit)
     
     if (backtransform) {
-      fit_out <- exp(fit_raw + 0.5 * se_raw^2)
-      se_out  <- exp(fit_raw) * se_raw
+      k        <- smear_lookup(smear, nd)
+      mean_out <- k * exp(fit_link)
+      lwr_out  <- k * exp(fit_link - 1.96 * se_link)
+      upr_out  <- k * exp(fit_link + 1.96 * se_link)
+      # Approximate response-scale SE, for reporting only — the CI above is
+      # the authoritative interval and is NOT derived from this value.
+      se_out   <- mean_out * se_link
     } else {
-      fit_out <- fit_raw
-      se_out  <- se_raw
+      mean_out <- fit_link
+      lwr_out  <- fit_link - 1.96 * se_link
+      upr_out  <- fit_link + 1.96 * se_link
+      se_out   <- se_link
     }
     
     nd |>
       mutate(Response  = response_label,
              Timepoint = lbl,
-             Mean      = round(fit_out, 3),
-             SE        = round(se_out, 3),
-             CI_lower  = round(Mean - 1.96 * SE, 3),
-             CI_upper  = round(Mean + 1.96 * SE, 3)) |>
+             Mean      = round(mean_out, 3),
+             SE        = round(se_out,   3),
+             CI_lower  = round(lwr_out,  3),
+             CI_upper  = round(upr_out,  3)) |>
       select(Response, Timepoint, !!group_var, Mean, SE, CI_lower, CI_upper)
   })
 }
 
 
 # ── Rigorous lpmatrix Time-Series Differences ─────────────────────────────────
-pairwise_diffs_rigorous <- function(model, df_ref, pred_grid, group_var, is_log_scale = FALSE) {
+# Both branches now derive the point estimate and its SE from the SAME delta-
+# method construction, so diff/se, the CI, and the significance rug are mutually
+# consistent. For log-scale responses the difference is taken on the response
+# scale (absolute units), with gradient d/dbeta [k1*exp(eta1) - k2*exp(eta2)]
+#   = k1*exp(eta1)*x1 - k2*exp(eta2)*x2 = f1*x1 - f2*x2.
+pairwise_diffs_rigorous <- function(model, df_ref, pred_grid, group_var,
+                                    is_log_scale = FALSE, smear = NULL) {
   
-  grp_levels <- if (is.factor(pred_grid[[group_var]])) levels(pred_grid[[group_var]]) else unique(pred_grid[[group_var]])
+  grp_levels <- if (is.factor(pred_grid[[group_var]])) {
+    levels(pred_grid[[group_var]])
+  } else {
+    unique(pred_grid[[group_var]])
+  }
   pairs <- combn(grp_levels, 2, simplify = FALSE)
   
-  # Identify the fixed variable to hold constant
-  fixed_var <- ifelse(group_var == "Species", "Spacing_f", "Species")
+  fixed_var   <- ifelse(group_var == "Species", "Spacing_f", "Species")
   fixed_level <- levels(df_ref[[fixed_var]])[1]
+  
+  V <- vcov(model, unconditional = TRUE)
+  b <- coef(model)
   
   map_dfr(pairs, function(pair) {
     lv1 <- pair[1]; lv2 <- pair[2]
@@ -376,40 +462,43 @@ pairwise_diffs_rigorous <- function(model, df_ref, pred_grid, group_var, is_log_
     g2 <- pred_grid |> filter(.data[[group_var]] == lv2) |> arrange(days)
     
     nd1 <- g1 |> mutate(!!fixed_var := factor(fixed_level, levels = levels(df_ref[[fixed_var]])),
-                        Plot_ID = levels(df_ref$Plot_ID)[1], Tree_ID = levels(df_ref$Tree_ID)[1])
-    
+                        Plot_ID = levels(df_ref$Plot_ID)[1],
+                        Tree_ID = levels(df_ref$Tree_ID)[1])
     nd2 <- g2 |> mutate(!!fixed_var := factor(fixed_level, levels = levels(df_ref[[fixed_var]])),
-                        Plot_ID = levels(df_ref$Plot_ID)[1], Tree_ID = levels(df_ref$Tree_ID)[1])
+                        Plot_ID = levels(df_ref$Plot_ID)[1],
+                        Tree_ID = levels(df_ref$Tree_ID)[1])
     
     X1 <- predict(model, newdata = nd1, type = "lpmatrix", exclude = c("s(Plot_ID)", "s(Tree_ID)"))
     X2 <- predict(model, newdata = nd2, type = "lpmatrix", exclude = c("s(Plot_ID)", "s(Tree_ID)"))
     
-    Xdiff <- X1 - X2
-    V     <- vcov(model, unconditional = TRUE) 
-    
-    fit_link <- as.numeric(Xdiff %*% coef(model))
-    se_link  <- sqrt(rowSums((Xdiff %*% V) * Xdiff))
-    
-    lwr_link <- fit_link - 1.96 * se_link
-    upr_link <- fit_link + 1.96 * se_link
+    eta1 <- as.numeric(X1 %*% b)
+    eta2 <- as.numeric(X2 %*% b)
     
     if (is_log_scale) {
-      abs_diff <- g1$fit - g2$fit
-      lwr_abs <- g2$fit * (exp(lwr_link) - 1)
-      upr_abs <- g2$fit * (exp(upr_link) - 1)
-      se_abs <- se_link * g2$fit   
-      sig <- (lwr_abs > 0) | (upr_abs < 0)
+      k1 <- smear_lookup(smear, nd1)
+      k2 <- smear_lookup(smear, nd2)
       
-      tibble(group1 = lv1, group2 = lv2, 
-             comparison = paste0(lv1, " - ", lv2), days = g1$days,
-             diff = abs_diff, se_diff = se_abs, lwr = lwr_abs, upr = upr_abs, sig = sig)
+      f1 <- k1 * exp(eta1)
+      f2 <- k2 * exp(eta2)
+      
+      diff_out <- f1 - f2
+      G        <- X1 * f1 - X2 * f2          # row i scaled by f1[i] / f2[i]
+      se_out   <- sqrt(rowSums((G %*% V) * G))
       
     } else {
-      tibble(group1 = lv1, group2 = lv2, 
-             comparison = paste0(lv1, " - ", lv2), days = g1$days,
-             diff = fit_link, se_diff = se_link, lwr = lwr_link, upr = upr_link, 
-             sig = (lwr_link > 0) | (upr_link < 0))
+      diff_out <- eta1 - eta2
+      Xdiff    <- X1 - X2
+      se_out   <- sqrt(rowSums((Xdiff %*% V) * Xdiff))
     }
+    
+    lwr_out <- diff_out - 1.96 * se_out
+    upr_out <- diff_out + 1.96 * se_out
+    
+    tibble(group1 = lv1, group2 = lv2,
+           comparison = paste0(lv1, " - ", lv2), days = g1$days,
+           diff = diff_out, se_diff = se_out,
+           lwr = lwr_out, upr = upr_out,
+           sig = (lwr_out > 0) | (upr_out < 0))
   })
 }
 
@@ -633,20 +722,23 @@ make_spacing_grid <- function(days_seq, df_ref) {
 # ──────────────────────────────────────────────────────────────────────────────
 
 cat("══ RESPONSE 1: Calibrated Height (Gaussian, raw scale) ════════════════\n")
-model_h <- fit_gamm_combined(df_h, "Height")
+model_h <- fit_gamm_combined(df_h, "Height",
+                             var_groups = c("Species", "Spacing_f"))
 cat("\n── Height combined model summary ────────────────────────────────────\n")
 print(summary(model_h))
 
 cat("\n══ RESPONSE 2: Crown Area (Gaussian, log scale) ════════════════════════\n")
 cat("   Fitted on log(Crown_Area_m2); predictions back-transformed to m²\n\n")
-model_c <- fit_gamm_combined(df_c, "Crown")
+model_c <- fit_gamm_combined(df_c, "Crown",
+                             var_groups = c("Species", "Spacing_f"))
 cat("\n── Crown combined model summary ─────────────────────────────────────\n")
 print(summary(model_c))
 
 cat("\n══ RESPONSE 3: CA:H Ratio (Gaussian, log scale) ════════════════════════\n")
 cat("   CA:H = Crown_Area_m2 / Height_m  (m2 m-1)\n")
 cat("   Fitted on log(CA:H); predictions back-transformed to m2 m-1\n\n")
-model_r <- fit_gamm_combined(df_r, "CAH")
+model_r <- fit_gamm_combined(df_r, "CAH",
+                             var_groups = c("Species", "Spacing_f"))
 cat("\n── CA:H combined model summary ──────────────────────────────────────\n")
 print(summary(model_r))
 
@@ -707,8 +799,17 @@ days_h <- seq(min(df_h$days), max(df_h$days), length.out = 300)
 days_c <- seq(min(df_c$days), max(df_c$days), length.out = 300)
 days_r <- seq(min(df_r$days), max(df_r$days), length.out = 300)
 
+# Smearing factors — computed once per log-scale model, reused everywhere
+smear_c <- smearing_factors(model_c, df_c)
+smear_r <- smearing_factors(model_r, df_r)
+
+cat("\n── Duan smearing factors (Crown) ───────────────────────────────────\n")
+print(round(smear_c$factors, 4))
+cat("\n── Duan smearing factors (CA:H) ────────────────────────────────────\n")
+print(round(smear_r$factors, 4))
+
 cat("Predicting height trajectories...\n")
-sp_diffs_h <- pairwise_diffs_rigorous(model_h, df_h, 
+sp_diffs_h <- pairwise_diffs_rigorous(model_h, df_h,
                                       predict_traj(model_h, make_species_grid(days_h, df_h)),
                                       "Species", is_log_scale = FALSE)
 sc_diffs_h <- pairwise_diffs_rigorous(model_h, df_h,
@@ -717,19 +818,23 @@ sc_diffs_h <- pairwise_diffs_rigorous(model_h, df_h,
 
 cat("Predicting crown area trajectories (back-transforming to m2)...\n")
 sp_diffs_c <- pairwise_diffs_rigorous(model_c, df_c,
-                                      predict_traj(model_c, make_species_grid(days_c, df_c), backtransform = TRUE),
-                                      "Species", is_log_scale = TRUE)
+                                      predict_traj(model_c, make_species_grid(days_c, df_c),
+                                                   backtransform = TRUE, smear = smear_c),
+                                      "Species", is_log_scale = TRUE, smear = smear_c)
 sc_diffs_c <- pairwise_diffs_rigorous(model_c, df_c,
-                                      predict_traj(model_c, make_spacing_grid(days_c, df_c), backtransform = TRUE),
-                                      "Spacing_f", is_log_scale = TRUE)
+                                      predict_traj(model_c, make_spacing_grid(days_c, df_c),
+                                                   backtransform = TRUE, smear = smear_c),
+                                      "Spacing_f", is_log_scale = TRUE, smear = smear_c)
 
 cat("Predicting CA:H ratio trajectories (back-transforming to m2 m-1)...\n")
 sp_diffs_r <- pairwise_diffs_rigorous(model_r, df_r,
-                                      predict_traj(model_r, make_species_grid(days_r, df_r), backtransform = TRUE),
-                                      "Species", is_log_scale = TRUE)
+                                      predict_traj(model_r, make_species_grid(days_r, df_r),
+                                                   backtransform = TRUE, smear = smear_r),
+                                      "Species", is_log_scale = TRUE, smear = smear_r)
 sc_diffs_r <- pairwise_diffs_rigorous(model_r, df_r,
-                                      predict_traj(model_r, make_spacing_grid(days_r, df_r), backtransform = TRUE),
-                                      "Spacing_f", is_log_scale = TRUE)
+                                      predict_traj(model_r, make_spacing_grid(days_r, df_r),
+                                                   backtransform = TRUE, smear = smear_r),
+                                      "Spacing_f", is_log_scale = TRUE, smear = smear_r)
 
 cat("\nRange checks (all should be non-zero):\n")
 cat("Height   species:", round(range(sp_diffs_h$diff), 3), "\n")
@@ -743,12 +848,54 @@ cat("CA:H     spacing:", round(range(sc_diffs_r$diff), 3), "\n")
 curve_h_sp <- predict_traj(model_h, make_species_grid(days_h, df_h))
 curve_h_sc <- predict_traj(model_h, make_spacing_grid(days_h, df_h))
 
-curve_c_sp <- predict_traj(model_c, make_species_grid(days_c, df_c), backtransform = TRUE)
-curve_c_sc <- predict_traj(model_c, make_spacing_grid(days_c, df_c), backtransform = TRUE)
+curve_c_sp <- predict_traj(model_c, make_species_grid(days_c, df_c),
+                           backtransform = TRUE, smear = smear_c)
+curve_c_sc <- predict_traj(model_c, make_spacing_grid(days_c, df_c),
+                           backtransform = TRUE, smear = smear_c)
 
-curve_r_sp <- predict_traj(model_r, make_species_grid(days_r, df_r), backtransform = TRUE)
-curve_r_sc <- predict_traj(model_r, make_spacing_grid(days_r, df_r), backtransform = TRUE)
+curve_r_sp <- predict_traj(model_r, make_species_grid(days_r, df_r),
+                           backtransform = TRUE, smear = smear_r)
+curve_r_sc <- predict_traj(model_r, make_spacing_grid(days_r, df_r),
+                           backtransform = TRUE, smear = smear_r)
 
+# Pearson residuals rescale by the prior weights, so under a correct variance
+# structure their SD should be ~1 in EVERY group. Deviation from 1 is what's
+# left uncorrected. Response residuals are also reported so you can see the
+# raw (uncorrected) spread that motivated the weighting.
+check_heteroscedasticity <- function(model, df, response_label) {
+  
+  df$resid_resp <- residuals(model, type = "response")
+  df$resid_pear <- residuals(model, type = "pearson")
+  
+  cat("\n====", response_label, "====\n")
+  
+  summarise_by <- function(d, gv) {
+    d |> group_by(.data[[gv]]) |>
+      summarise(n = n(),
+                sd_response = round(sd(resid_resp), 4),
+                sd_pearson  = round(sd(resid_pear), 4),
+                .groups = "drop") |>
+      arrange(desc(sd_response))
+  }
+  
+  cat("\n-- Residuals by Species --\n");  print(summarise_by(df, "Species"))
+  cat("\n-- Residuals by Spacing --\n");  print(summarise_by(df, "Spacing_f"))
+  
+  ratio <- function(x) round(max(x) / min(x), 2)
+  sp <- summarise_by(df, "Species"); sc <- summarise_by(df, "Spacing_f")
+  
+  cat("\n-- SD ratio (max/min) --\n")
+  cat("  Species  | response:", ratio(sp$sd_response),
+      " pearson:", ratio(sp$sd_pearson), "\n")
+  cat("  Spacing  | response:", ratio(sc$sd_response),
+      " pearson:", ratio(sc$sd_pearson), "\n")
+  cat("  Target: pearson ratio near 1.0 (say < 1.2). Response ratio is\n")
+  cat("  expected to stay high — that is the real heterogeneity being modelled.\n")
+}
+
+check_heteroscedasticity(model_h, df_h, "Height")
+check_heteroscedasticity(model_c, df_c, "Crown Area (log)")
+check_heteroscedasticity(model_r, df_r, "CA:H Ratio (log)")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # PLOTS ####
@@ -758,7 +905,7 @@ cat("\nGenerating plots...\n")
 
 # ── CROWN AREA plots ──────────────────────────────────────────────────────────
 p_c_sp_diff <- plot_diffs(sp_diffs_c,
-                          y_label  = "Difference in crown area (m\u00b2)",
+                          y_label  = "Difference in crown area per tree (m\u00b2)",
                           fill_col = "#1b9e77", ncol = 3,
                           title    = "Species pairwise crown area differences",
                           subtitle = paste0(POPULATION_LABEL, " | Simulated at ", BASELINE_SPACING, " | Shaded = 95% CI | Red rug = significant period"))
@@ -766,7 +913,7 @@ ggsave(file.path(OUTPUT_DIR, "crown_species_differences.png"), p_c_sp_diff,
        width = 6.30, height = 5, units = "in", dpi = 300)
 
 p_c_sc_diff <- plot_diffs(sc_diffs_c,
-                          y_label  = "Difference in crown area (m\u00b2)",
+                          y_label  = "Difference in crown area per tree (m\u00b2)",
                           fill_col = "#d95f02", ncol = 3,
                           title    = "Spacing pairwise crown area differences",
                           subtitle = paste0(POPULATION_LABEL, " | Simulated for ", BASELINE_SPECIES, " | Shaded = 95% CI | Red rug = significant period"))
@@ -776,20 +923,20 @@ ggsave(file.path(OUTPUT_DIR, "crown_spacing_differences.png"), p_c_sc_diff,
 p_c_sp_curves <- curve_plot(curve_c_sp, "Species", species_colors,
                             colour_labels = species_display,
                             legend_title  = "Species",
-                            y_label       = "Crown area (m\u00b2)",
+                            y_label       = "Crown area per tree (m\u00b2)",
                             title         = "GAMM-fitted crown area growth trajectories by species",
                             subtitle = paste0(POPULATION_LABEL, " | Simulated at ", BASELINE_SPACING, " | Shaded = 95% CI"))
 
 p_c_sc_curves <- curve_plot(curve_c_sc, "Spacing_f", spacing_colors,
                             colour_labels = spacing_display,
                             legend_title  = "Spacing",
-                            y_label       = "Crown area (m\u00b2)",
+                            y_label       = "Crown area per tree (m\u00b2)",
                             title         = "GAMM-fitted crown area growth trajectories by spacing",
                             subtitle = paste0(POPULATION_LABEL, " | Simulated for ", BASELINE_SPECIES, " | Shaded = 95% CI"))
 
 # ── HEIGHT plots ──────────────────────────────────────────────────────────────
 p_h_sp_diff <- plot_diffs(sp_diffs_h,
-                          y_label  = "Difference in height (m)",
+                          y_label  = "Difference in calibrated height per tree (m)",
                           fill_col = "steelblue", ncol = 3,
                           title    = "Species pairwise height differences",
                           subtitle = paste0(POPULATION_LABEL, " | Simulated at ", BASELINE_SPACING, " | Shaded = 95% CI | Red rug = significant period"))
@@ -797,7 +944,7 @@ ggsave(file.path(OUTPUT_DIR, "height_species_differences.png"), p_h_sp_diff,
        width = 6.30, height = 5, units = "in", dpi = 300)
 
 p_h_sc_diff <- plot_diffs(sc_diffs_h,
-                          y_label  = "Difference in height (m)",
+                          y_label  = "Difference in calibrated height per tree (m)",
                           fill_col = "darkorange", ncol = 3,
                           title    = "Spacing pairwise height differences",
                           subtitle = paste0(POPULATION_LABEL, " | Simulated for ", BASELINE_SPECIES, " | Shaded = 95% CI | Red rug = significant period"))
@@ -807,21 +954,21 @@ ggsave(file.path(OUTPUT_DIR, "height_spacing_differences.png"), p_h_sc_diff,
 p_h_sp_curves <- curve_plot(curve_h_sp, "Species", species_colors,
                             colour_labels = species_display,
                             legend_title  = "Species",
-                            y_label       = "Calibrated height (m)",
+                            y_label       = "Calibrated height per tree (m)",
                             title         = "GAMM-fitted height growth trajectories by species",
                             subtitle = paste0(POPULATION_LABEL, " | Simulated at ", BASELINE_SPACING, " | Shaded = 95% CI"))
 
 p_h_sc_curves <- curve_plot(curve_h_sc, "Spacing_f", spacing_colors,
                             colour_labels = spacing_display,
                             legend_title  = "Spacing",
-                            y_label       = "Calibrated height (m)",
+                            y_label       = "Calibrated height per tree (m)",
                             title         = "GAMM-fitted height growth trajectories by spacing",
                             subtitle = paste0(POPULATION_LABEL, " | Simulated for ", BASELINE_SPECIES, " | Shaded = 95% CI"))
 
 
 # ── CA:H RATIO plots ──────────────────────────────────────────────────────────
 p_r_sp_diff <- plot_diffs(sp_diffs_r,
-                          y_label  = "Difference in CA:H ratio (m\u00b2 m\u207b\u00b9)",
+                          y_label  = "Difference in CA:H ratio per tree (m\u00b2 m\u207b\u00b9)",
                           fill_col = "#6a3d9a", ncol = 3,
                           title    = "Species pairwise CA:H ratio differences",
                           subtitle = paste0(POPULATION_LABEL, " | Simulated at ", BASELINE_SPACING, " | Shaded = 95% CI | Red rug = significant period"))
@@ -829,7 +976,7 @@ ggsave(file.path(OUTPUT_DIR, "cah_species_differences.png"), p_r_sp_diff,
        width = 6.30, height = 5, units = "in", dpi = 300)
 
 p_r_sc_diff <- plot_diffs(sc_diffs_r,
-                          y_label  = "Difference in CA:H ratio (m\u00b2 m\u207b\u00b9)",
+                          y_label  = "Difference in CA:H ratio per tree (m\u00b2 m\u207b\u00b9)",
                           fill_col = "#e31a1c", ncol = 3,
                           title    = "Spacing pairwise CA:H ratio differences",
                           subtitle = paste0(POPULATION_LABEL, " | Simulated for ", BASELINE_SPECIES, " | Shaded = 95% CI | Red rug = significant period"))
@@ -839,14 +986,14 @@ ggsave(file.path(OUTPUT_DIR, "cah_spacing_differences.png"), p_r_sc_diff,
 p_r_sp_curves <- curve_plot(curve_r_sp, "Species", species_colors,
                             colour_labels = species_display,
                             legend_title  = "Species",
-                            y_label       = "CA:H ratio (m\u00b2 m\u207b\u00b9)",
+                            y_label       = "CA:H ratio per tree (m\u00b2 m\u207b\u00b9)",
                             title         = "GAMM-fitted CA:H ratio trajectories by species",
                             subtitle = paste0(POPULATION_LABEL, " | Simulated at ", BASELINE_SPACING, " | Shaded = 95% CI"))
 
 p_r_sc_curves <- curve_plot(curve_r_sc, "Spacing_f", spacing_colors,
                             colour_labels = spacing_display,
                             legend_title  = "Spacing",
-                            y_label       = "CA:H ratio (m\u00b2 m\u207b\u00b9)",
+                            y_label       = "CA:H ratio per tree (m\u00b2 m\u207b\u00b9)",
                             title         = "GAMM-fitted CA:H ratio trajectories by spacing",
                             subtitle = paste0(POPULATION_LABEL, " | Simulated for ", BASELINE_SPECIES, " | Shaded = 95% CI"))
 
@@ -1153,21 +1300,21 @@ tbl2_h_sc <- marginal_means(model_h, "Spacing_f", levels(df_h$Spacing_f),
 tbl2_c_sp <- marginal_means(model_c, "Species",   levels(df_c$Species),
                             "Spacing_f", levels(df_c$Spacing_f)[1],
                             df_c, key_days, key_labels, "Crown Area (m2)",
-                            backtransform = TRUE)
+                            backtransform = TRUE, smear = smear_c)
 tbl2_c_sc <- marginal_means(model_c, "Spacing_f", levels(df_c$Spacing_f),
                             "Species",   levels(df_c$Species)[1],
                             df_c, key_days, key_labels, "Crown Area (m2)",
-                            backtransform = TRUE)
+                            backtransform = TRUE, smear = smear_c)
 
 # CA:H — back-transform from log scale to m² m⁻¹
 tbl2_r_sp <- marginal_means(model_r, "Species",   levels(df_r$Species),
                             "Spacing_f", levels(df_r$Spacing_f)[1],
                             df_r, key_days, key_labels, "CA:H Ratio (m2 m-1)",
-                            backtransform = TRUE)
+                            backtransform = TRUE, smear = smear_r)
 tbl2_r_sc <- marginal_means(model_r, "Spacing_f", levels(df_r$Spacing_f),
                             "Species",   levels(df_r$Species)[1],
                             df_r, key_days, key_labels, "CA:H Ratio (m2 m-1)",
-                            backtransform = TRUE)
+                            backtransform = TRUE, smear = smear_r)
 
 tbl2_list <- list(
   list(tbl2_h_sp, "2A: Heights by Species"),
