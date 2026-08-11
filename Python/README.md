@@ -13,9 +13,9 @@ The R pipeline (`../R`) produces the master longitudinal dataset; this folder do
 
 ## Pipeline overview
 
-![Section 2.6 statistical analysis workflow](../Diagrams/section_2_6_figure.png)
+![Section 2.6 statistical analysis workflow](Diagrams/section_2_6_figure.png)
 
-*The diagram above corresponds to Section 2.6 of the thesis. Editable source: `../Diagrams/section_2_6_figure.drawio`.*
+*The diagram above corresponds to Section 2.6 of the thesis. Editable source: `Diagrams/section_2_6_figure.drawio`.*
 
 ---
 
