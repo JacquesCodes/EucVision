@@ -154,7 +154,7 @@ cat("=====================================================\n\n")
 borrowed_dates <- as.Date(c("2025-11-14", "2026-03-16", "2026-04-08", 
                             "2026-04-13", "2026-04-29"))
 
-df_raw <- read_csv("C:/Users/jakev/Downloads/UAV_Master_Dataset_25-05-2026.csv", 
+df_raw <- read_csv("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data Analysis/UAV_Master_Dataset_25-05-2026.csv", 
                    show_col_types = FALSE) %>%
   mutate(Tree = round(as.numeric(Tree), 2))
 
