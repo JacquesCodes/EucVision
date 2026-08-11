@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# EUCVISION: TIME-LAPSE GENERATION & SPATIAL OVERLAY PIPELINE ####
+# TIME-LAPSE GENERATION & SPATIAL OVERLAY PIPELINE ####
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
 # Project: EucXylo (https://eucxylo.sun.ac.za/)

@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# EUCVISION: TLS POINT CLOUD PREPROCESSING & SPATIAL CORRECTION PIPELINE ####
+# TLS POINT CLOUD PREPROCESSING & SPATIAL CORRECTION PIPELINE ####
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
 # Project: EucXylo (https://eucxylo.sun.ac.za/)

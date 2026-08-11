@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# EUCVISION: BATCH PLOT-LEVEL DSM-DTM PROCESSING & DATA MERGING PIPELINE ####
+# BATCH PLOT-LEVEL DSM-DTM PROCESSING & DATA MERGING PIPELINE ####
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
 # Project: EucXylo (https://eucxylo.sun.ac.za/)

@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# EUCVISION: DATA EXTRACTION, MERGING, & CLEANING PIPELINE ####
+# DATA EXTRACTION, MERGING, & CLEANING PIPELINE ####
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
@@ -33,7 +33,7 @@ dest_backup_dir <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skrips
 dest_master_csv <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data Analysis/01. Master Dataset.csv"
 field_measurements_csv <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data Analysis/02. Field Measurements.csv"
 
-# --- ADDED: Path to your Master Template to track the Dead Trees ---
+# Path to your Master Template to track the Dead Trees ---
 template_csv <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data Analysis/00. Dataset template.csv"
 
 # Load the master template once into memory
@@ -114,7 +114,7 @@ for (folder in main_folders) {
                           "Species", "Tree", "Crown_Area", "Tree_Height")
         temp_df <- select(temp_df, any_of(cols_to_keep))
         
-        # --- INJECT DEAD TREES: Left join the master template with the drone data ---
+        # INJECT DEAD TREES: Left join the master template with the drone data
         # Alive trees get their drone metrics. Missing/Dead trees get NA.
         temp_df <- master_template %>%
           left_join(temp_df, by = c("Compartment", "Line", "Plot", "Culture", "Spacing", "Species", "Tree"))

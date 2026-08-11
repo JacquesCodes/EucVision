@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# EUCVISION: TEMPERATURE HEAT MAP TIME-LAPSE (ALL PLOTS) ####
+# TEMPERATURE HEAT MAP TIME-LAPSE (ALL PLOTS) ####
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
 # Description: Generates a heat map time-lapse of daily maximum soil temperatures

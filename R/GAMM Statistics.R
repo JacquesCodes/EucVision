@@ -1,7 +1,10 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # GAMM — Calibrated Height, Crown Area & Crown:Height Ratio
 # ──────────────────────────────────────────────────────────────────────────────
-# Eucalyptus species × spacing trial | EucVision, IMPACT OAL, Stellenbosch
+# Author: Jacques Vermeulen
+# Project: EucXylo (https://eucxylo.sun.ac.za/)
+# ──────────────────────────────────────────────────────────────────────────────
+# Eucalyptus species × spacing trial | IMPACT OAL, Stellenbosch
 #
 # Time series: 1 September 2025 onwards (t0 = 2025-09-01)
 # Population:  Single-culture plots only | Living trees only

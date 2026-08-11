@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# EUCVISION: BASELINE DTM FUSION 
+# BASELINE DTM FUSION 
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
 # Project: EucXylo (https://eucxylo.sun.ac.za/)

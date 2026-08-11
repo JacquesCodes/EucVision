@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# EUCVISION: BATCH CHM HEIGHT EXTRACTION PIPELINE
+# BATCH CHM HEIGHT EXTRACTION PIPELINE
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
 # Project: EucXylo (https://eucxylo.sun.ac.za/) 

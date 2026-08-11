@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# EUCVISION: BATCH PLOT-LEVEL SfM PROCESSING PIPELINE
+# BATCH PLOT-LEVEL SfM PROCESSING PIPELINE
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
 # Project: EucXylo (https://eucxylo.sun.ac.za/) 

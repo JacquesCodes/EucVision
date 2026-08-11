@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# EUCVISION: SPATIAL MAPPING & CHM VISUALIZATION PIPELINE ####
+# SPATIAL MAPPING & CHM VISUALIZATION PIPELINE ####
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
 # Project: EucXylo (https://eucxylo.sun.ac.za/)

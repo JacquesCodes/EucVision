@@ -148,6 +148,7 @@ from matplotlib.patches import Ellipse
 import matplotlib.transforms as transforms
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import cross_val_predict
+from sklearn.model_selection import KFold
 from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 import matplotlib.patches as mpatches
 from statsmodels.nonparametric.smoothers_lowess import lowess
@@ -226,10 +227,12 @@ df['Tree_Height'] = df.groupby('Tree_ID')['Tree_Height'].cummax()
 target_date_tls = pd.to_datetime('2025-11-28')
 target_date_field = pd.to_datetime('2026-03-23')
 target_date_als = pd.to_datetime('2026-06-26')
-cutoff_date = pd.to_datetime('2026-03-16') # GSD hardware switch date
+cutoff_date = pd.to_datetime('2026-03-16')   # TLS -> Field model switch
+cutoff_date_als = target_date_als             # Field -> ALS model switch
 
 tls_ref = df[df['Date'] == target_date_tls][['Tree_ID', 'LiDAR_Height']].rename(columns={'LiDAR_Height': 'Target_Height'})
 field_ref = df[df['Date'] == target_date_field][['Tree_ID', 'Ground_Truth_Height']].rename(columns={'Ground_Truth_Height': 'Target_Height'})
+als_field_ref = df[df['Date'] == target_date_als][['Tree_ID', 'Ground_Truth_Height']].rename(columns={'Ground_Truth_Height': 'Target_Height'})
 
 df['Target_Height'] = np.nan
 
@@ -239,10 +242,12 @@ df.loc[mask_tls, 'Target_Height'] = df.loc[mask_tls, 'Tree_ID'].map(tls_ref.set_
 mask_field = df['Date'] == target_date_field
 df.loc[mask_field, 'Target_Height'] = df.loc[mask_field, 'Tree_ID'].map(field_ref.set_index('Tree_ID')['Target_Height'])
 
+mask_als = df['Date'] == target_date_als
+df.loc[mask_als, 'Target_Height'] = df.loc[mask_als, 'Tree_ID'].map(als_field_ref.set_index('Tree_ID')['Target_Height'])
 # 2. TRAIN CALIBRATION MODELS (Per Species, Per Epoch)
 calibration_models = []
 
-for target_date in [target_date_tls, target_date_field]:
+for target_date in [target_date_tls, target_date_field, target_date_als]:
     date_data = df[df['Date'] == target_date].dropna(subset=['Target_Height', 'Tree_Height', 'Species'])
 
     for species, group in date_data.groupby('Species'):
@@ -278,7 +283,8 @@ is_uav = df['Date'] >= uav_start_date
 df_uav = df[is_uav].copy()
 
 mask_before_switch = df_uav['Date'] < cutoff_date
-mask_after_switch = df_uav['Date'] >= cutoff_date
+mask_mid_switch = (df_uav['Date'] >= cutoff_date) & (df_uav['Date'] < cutoff_date_als)
+mask_after_als = df_uav['Date'] >= cutoff_date_als
 
 # Apply November models (TLS) to pre-switch drone data
 nov_models = model_df[model_df['Epoch_Date'] == target_date_tls].set_index('Species')
@@ -289,13 +295,22 @@ for species in df_uav['Species'].unique():
         spc_mask = mask_before_switch & (df_uav['Species'] == species)
         df_uav.loc[spc_mask, 'Calibrated_Height'] = (df_uav.loc[spc_mask, 'Tree_Height'] * m) + c
 
-# Apply March models (Field) to post-switch drone data
+# Apply March models (Field) to mid-window drone data
 mar_models = model_df[model_df['Epoch_Date'] == target_date_field].set_index('Species')
 for species in df_uav['Species'].unique():
     if species in mar_models.index:
         m = mar_models.loc[species, 'Slope']
         c = mar_models.loc[species, 'Intercept']
-        spc_mask = mask_after_switch & (df_uav['Species'] == species)
+        spc_mask = mask_mid_switch & (df_uav['Species'] == species)
+        df_uav.loc[spc_mask, 'Calibrated_Height'] = (df_uav.loc[spc_mask, 'Tree_Height'] * m) + c
+
+# Apply June (ALS) models to post-June-26 drone data
+als_models = model_df[model_df['Epoch_Date'] == target_date_als].set_index('Species')
+for species in df_uav['Species'].unique():
+    if species in als_models.index:
+        m = als_models.loc[species, 'Slope']
+        c = als_models.loc[species, 'Intercept']
+        spc_mask = mask_after_als & (df_uav['Species'] == species)
         df_uav.loc[spc_mask, 'Calibrated_Height'] = (df_uav.loc[spc_mask, 'Tree_Height'] * m) + c
 
 # Re-integrate and validate
@@ -310,7 +325,7 @@ df['Calibrated_Height'] = df.groupby('Tree_ID')['Calibrated_Height'].cummax()
 # ------------------------------------------------------------------------------
 df['Honest_Calibrated_Height'] = df['Calibrated_Height']
 
-for cal_date in [target_date_tls, target_date_field]:
+for cal_date in [target_date_tls, target_date_field, target_date_als]:
     df_temp = df[df['Date'] == cal_date].copy()
     mask = df_temp['Target_Height'].notna() & df_temp['Tree_Height'].notna() & df_temp['Species'].notna()
 
@@ -328,7 +343,8 @@ for cal_date in [target_date_tls, target_date_field]:
         y = df_temp.loc[mask, 'Target_Height']
 
         # 5-Fold cross-validation predicting actual target height directly
-        oos_preds = cross_val_predict(LinearRegression(), X, y, cv=5)
+        cv = KFold(n_splits=5, shuffle=True, random_state=42)
+        oos_preds = cross_val_predict(LinearRegression(), X, y, cv=cv)
 
         valid_indices = df_temp.loc[mask].index
         df.loc[valid_indices, 'Honest_Calibrated_Height'] = oos_preds
@@ -354,21 +370,27 @@ agg_cols = [
     'Calibrated_Height', 'Honest_Calibrated_Height'
 ]
 
-def top_20_mean(series):
-    s = series.dropna()
-    if len(s) == 0: return np.nan
-    threshold = s.quantile(0.80)
-    return s[s >= threshold].mean()
+def filter_dominant_by_height(df_source, height_col='Calibrated_Height'):
+    """Isolate the top-20% dominant trees by HEIGHT within each
+    Date/Spacing/Species/Plot cell."""
+    df_clean = df_source.dropna(
+        subset=[height_col, 'Species', 'Spacing', 'Plot', 'Date']).copy()
+    dominant = []
+    for _, group in df_clean.groupby(['Date', 'Spacing', 'Species', 'Plot']):
+        threshold = group[height_col].quantile(0.80)
+        dominant.append(group[group[height_col] >= threshold])
+    return pd.concat(dominant, ignore_index=True)
 
-daily_agg = df.groupby('Date')[agg_cols].agg(['mean', top_20_mean]).reset_index()
-daily_agg.columns = [f"{col[0]}_{col[1]}" if col[1] else col[0] for col in daily_agg.columns]
+# Full-population daily means
+daily_mean = df.groupby('Date')[agg_cols].mean()
+daily_mean.columns = [f"{c}_mean" for c in daily_mean.columns]
 
-daily_agg = daily_agg.set_index('Date')
-daily_agg['Crown_Area'] = daily_agg['Crown_Area_mean']
-daily_agg['Crown_Area'] = daily_agg['Crown_Area'].interpolate(method='time')
-daily_agg['Crown_Area_mean'] = daily_agg['Crown_Area_mean'].interpolate(method='time')
-daily_agg['Crown_Area_top_20_mean'] = daily_agg['Crown_Area_top_20_mean'].interpolate(method='time')
-daily_agg = daily_agg.reset_index()
+# Dominant-cohort daily means (top 20% by height, per plot/species/spacing)
+df_dominant = filter_dominant_by_height(df)
+daily_dom = df_dominant.groupby('Date')[agg_cols].mean()
+daily_dom.columns = [f"{c}_top_20_mean" for c in daily_dom.columns]
+
+daily_agg = daily_mean.join(daily_dom, how='outer').reset_index()
 
 # ------------------------------------------------------------------------------
 # 6. PLOTTING CONFIGURATIONS
@@ -387,20 +409,20 @@ def plot_dynamic_panel_grid(date_str, custom_title, reference_label='TLS'):
 
     if has_reference and has_field:
         plots = [
-            ('LiDAR_Height', 'Original_Height', f'Reference {reference_label} Height (m)', 'Uncalibrated UAV Height (m)', f'Uncalibrated UAV vs Reference {reference_label}', 'blue', False),
-            ('LiDAR_Height', 'Honest_Calibrated_Height', f'Reference {reference_label} Height (m)', 'Calibrated UAV Height (m)', f'Calibrated UAV vs Reference {reference_label} (Cross-Validated)', 'orange', False),
-            ('LiDAR_Height', 'Ground_Truth_Height', f'Reference {reference_label} Height (m)', 'Field-Measured Height (m)', f'Field-Measured vs Reference {reference_label}', 'teal', True),
-            ('Ground_Truth_Height', 'Honest_Calibrated_Height', 'Field-Measured Height (m)', 'Calibrated UAV Height (m)', 'Calibrated UAV vs Field-Measured (Cross-Validated)', 'purple', True)
+            ('LiDAR_Height', 'Original_Height', f'Reference {reference_label} height (m)', 'Uncalibrated UAV height (m)', f'Uncalibrated UAV vs reference {reference_label}', 'blue', False),
+            ('LiDAR_Height', 'Honest_Calibrated_Height', f'Reference {reference_label} height (m)', 'Calibrated UAV height (m)', f'Calibrated UAV vs reference {reference_label}', 'orange', False),
+            ('LiDAR_Height', 'Ground_Truth_Height', f'Reference {reference_label} height (m)', 'Field-measured height (m)', f'Field-measured vs reference {reference_label}', 'teal', True),
+            ('Ground_Truth_Height', 'Honest_Calibrated_Height', 'Field-measured height (m)', 'Calibrated UAV height (m)', 'Calibrated UAV vs field-measured', 'purple', True)
         ]
     elif has_reference:
         plots = [
-            ('LiDAR_Height', 'Original_Height', f'{reference_label} Height (m)', 'Uncalibrated UAV Height (m)', f'Uncalibrated UAV vs Reference {reference_label}', 'blue', False),
-            ('LiDAR_Height', 'Honest_Calibrated_Height', f'{reference_label} Height (m)', 'Calibrated UAV Height (m)', f'Calibrated UAV vs Reference {reference_label} (Cross-Validated)', 'orange', False)
+            ('LiDAR_Height', 'Original_Height', f'{reference_label} height (m)', 'Uncalibrated UAV height (m)', f'Uncalibrated UAV vs reference {reference_label}', 'blue', False),
+            ('LiDAR_Height', 'Honest_Calibrated_Height', f'{reference_label} height (m)', 'Calibrated UAV height (m)', f'Calibrated UAV vs reference {reference_label}', 'orange', False)
         ]
     else:
         plots = [
-            ('Ground_Truth_Height', 'Original_Height', 'Field-Measured Height (m)', 'Uncalibrated UAV Height (m)', 'Uncalibrated UAV vs Field-Measured', 'green', True),
-            ('Ground_Truth_Height', 'Honest_Calibrated_Height', 'Field-Measured Height (m)', 'Calibrated UAV Height (m)', 'Calibrated UAV vs Field-Measured (Cross-Validated)', 'purple', True)
+            ('Ground_Truth_Height', 'Original_Height', 'Field-measured height (m)', 'Uncalibrated UAV height (m)', 'Uncalibrated UAV vs field-measured', 'green', True),
+            ('Ground_Truth_Height', 'Honest_Calibrated_Height', 'Field-measured height (m)', 'Calibrated UAV height (m)', 'Calibrated UAV vs field-measured', 'purple', True)
         ]
 
     num_plots = len(plots)
@@ -451,9 +473,9 @@ def plot_dynamic_panel_grid(date_str, custom_title, reference_label='TLS'):
             sub = df_date.dropna(subset=[x_col, y_col, 'Spacing'])
 
             if len(sub) > 0:
-                r2 = r2_score(sub[x_col], sub[y_col])
+                r2 = stats.linregress(sub[x_col], sub[y_col]).rvalue ** 2
                 rmse = np.sqrt(mean_squared_error(sub[x_col], sub[y_col]))
-                mae = mean_absolute_error(sub[x_col], sub[y_col])
+                print(f"  ({chr(97+i)}) n = {len(sub)} | R2 = {r2:.2f} | RMSE = {rmse:.2f}")
 
                 if use_spacing_colors:
                     for sp in spacings_sorted:
@@ -480,10 +502,10 @@ def plot_dynamic_panel_grid(date_str, custom_title, reference_label='TLS'):
                     ax.fill_between(lims, min_val, lims, color='lightcoral', alpha=0.15, zorder=1)
                     ax.fill_between(lims, lims, max_val, color='lightblue', alpha=0.15, zorder=1)
                     bbox_props = dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.8)
-                    ax.text(max_val * 0.75, max_val * 0.25, 'Height\nUnderestimated',
+                    ax.text(max_val * 0.75, max_val * 0.25, 'Height\nunderestimated',
                             color='firebrick', weight='bold', ha='center', va='center',
                             zorder=5, bbox=bbox_props)
-                    ax.text(max_val * 0.25, max_val * 0.55, 'Height\nOverestimated',
+                    ax.text(max_val * 0.25, max_val * 0.55, 'Height\noverestimated',
                             color='steelblue', weight='bold', ha='center', va='center',
                             zorder=5, bbox=bbox_props)
 
@@ -493,14 +515,14 @@ def plot_dynamic_panel_grid(date_str, custom_title, reference_label='TLS'):
                 ax.xaxis.set_major_locator(ticker.MultipleLocator(1))
                 ax.yaxis.set_major_locator(ticker.MultipleLocator(1))
 
-                ax.set_title(f"{subplot_title}\n$R^2$ = {r2:.2f} | RMSE = {rmse:.2f}m | MAE = {mae:.2f}m")
+                ax.set_title(f"{subplot_title}\n$R^2$ = {r2:.2f} | RMSE = {rmse:.2f}m")
                 ax.set_xlabel(x_lab, weight='bold')
                 ax.set_ylabel(y_lab, weight='bold')
                 ax.set_aspect('equal', adjustable='box')
                 ax.grid(False)
 
             else:
-                ax.text(0.5, 0.5, 'Insufficient Data Pairs', ha='center', va='center')
+                ax.text(0.5, 0.5, 'Insufficient data pairs', ha='center', va='center')
                 ax.axis('off')
         else:
             ax.axis('off')
@@ -580,7 +602,7 @@ def plot_growth_trajectory(df, smooth_frac=0.3):
     else:
         data_pre_uav_connected = data_pre_uav
 
-    # --- 1. Field-Measured (Pre-UAV) ---
+    # --- 1. Field-measured (Pre-UAV) ---
     field_label_used = False
     if not data_pre_uav_connected.empty:
         ax.plot(data_pre_uav_connected['Date'], data_pre_uav_connected['Mean_Original'],
@@ -588,13 +610,13 @@ def plot_growth_trajectory(df, smooth_frac=0.3):
 
     if not data_pre_uav.empty:
         ax.plot(data_pre_uav['Date'], data_pre_uav['Mean_Original'],
-                color='red', linestyle='', marker='*', markersize=6, zorder=5, label='Field-Measured')
+                color='red', linestyle='', marker='*', markersize=6, zorder=5, label='Field-measured')
         field_label_used = True
 
     # Plot any late-stage Field data (like 23 Mar 2026) as stars
     data_gt = agg_df.dropna(subset=['Mean_Field'])
     if not data_gt.empty:
-        gt_label = '_nolegend_' if field_label_used else 'Field-Measured'
+        gt_label = '_nolegend_' if field_label_used else 'Field-measured'
         ax.plot(data_gt['Date'], data_gt['Mean_Field'],
                 color='red', linestyle='', marker='*', markersize=6, zorder=5, label=gt_label)
 
@@ -637,15 +659,22 @@ def plot_growth_trajectory(df, smooth_frac=0.3):
             ax.plot(clean_ht['Date'], smoothed_ht[:, 1],
                     color=color_ht_smooth, linewidth=2, label='Calibrated UAV')
 
-    # --- 4. Reference LiDAR ---
+# --- 4. Reference LiDAR (TLS vs ALS) ---
     data_lidar = agg_df.dropna(subset=['Mean_LiDAR'])
-    if not data_lidar.empty:
-        ax.plot(data_lidar['Date'], data_lidar['Mean_LiDAR'],
-                color='lightblue', markeredgecolor='#0066cc', linestyle='', marker='D', markersize=6, zorder=4, label='Reference LiDAR')
+    data_lidar_tls = data_lidar[data_lidar['Date'] < target_date_als]
+    data_lidar_als = data_lidar[data_lidar['Date'] >= target_date_als]
+
+    if not data_lidar_tls.empty:
+        ax.plot(data_lidar_tls['Date'], data_lidar_tls['Mean_LiDAR'],
+                color='lightblue', markeredgecolor='#0066cc', linestyle='', marker='D', markersize=6, zorder=4, label='Reference TLS')
+
+    if not data_lidar_als.empty:
+        ax.plot(data_lidar_als['Date'], data_lidar_als['Mean_LiDAR'],
+                color='#FFD166', markeredgecolor='#F77F00', linestyle='', marker='D', markersize=6, zorder=1.5, label='Reference ALS')
 
     # --- Formatting ---
-    ax.set_title("Stand Height Growth Trajectory: Uncalibrated vs. Calibrated", pad=10)
-    ax.set_ylabel("Mean Tree Height (m)")
+    ax.set_title("Effect of calibration on stand height growth trajectory", pad=10)
+    ax.set_ylabel("Mean height per tree (m)")
 
     ax.set_ylim(bottom=0)
 
@@ -683,9 +712,9 @@ df = df.groupby(group_cols, dropna=False).first().reset_index()
 df = df.sort_values(by=['Date', 'Plot', 'Tree'], ascending=[True, True, True])
 
 # Run Visualizations
-plot_dynamic_panel_grid('2025-11-28', 'Tree Height Correlations: 28 November 2025 (0.6cm GSD)', reference_label='TLS')
-plot_dynamic_panel_grid('2026-03-23', 'Tree Height Correlations: 23 March 2026 (3cm GSD)', reference_label='TLS')
-plot_dynamic_panel_grid('2026-05-25', 'Tree Height Correlations: 25 May 2026 (3cm GSD)', reference_label='ALS')
+plot_dynamic_panel_grid('2025-11-28', 'Tree height correlations: 28 November 2025 (0.6cm GSD)', reference_label='TLS')
+plot_dynamic_panel_grid('2026-03-23', 'Tree height correlations: 23 March 2026 (3cm GSD)', reference_label='TLS')
+plot_dynamic_panel_grid('2026-06-26', 'Tree height correlations: 26 June 2026 (3cm GSD)', reference_label='ALS')
 plot_growth_trajectory(df)
 
 # ------------------------------------------------------------------------------
@@ -693,15 +722,17 @@ plot_growth_trajectory(df)
 # ------------------------------------------------------------------------------
 column_order = [
     'Date', 'Compartment', 'Line', 'Plot', 'Culture', 'Spacing', 'Species', 'Tree','Tree_ID',
-    'Death_Date','Stem_Diameter', 'Crown_Area', 'Calibrated_Height','LiDAR_Height',
-    'Canopy_Cover', 'Crown_Diameter', 'Basal_Area'
+    'Death_Date','Stem_Diameter', 'Crown_Area', 'Calibrated_Height', #'Honest_Calibrated_Height',
+    'LiDAR_Height','Ground_Truth_Height', 'Canopy_Cover', 'Crown_Diameter', 'Basal_Area'
 ]
 
 unit_mapping = {
     'Stem_Diameter': 'Stem_Diameter_cm',
     'Crown_Area': 'Crown_Area_m2',
     'Calibrated_Height': 'Calibrated_Height_m',
+    #'Honest_Calibrated_Height': 'Honest_Calibrated_Height_m',
     'LiDAR_Height': 'LiDAR_Height_m',
+    'Ground_Truth_Height': 'Field_Measured_Height_m',
     'Crown_Diameter': 'Crown_Diameter_m',
     'Canopy_Cover': 'Crown_Cover_Index',
     'Basal_Area': 'Basal_Area_cm2',
@@ -726,12 +757,132 @@ agg_output_path = f'/content/drive/My Drive/EucVision/UAV_Aggregated_Metrics_{la
 daily_agg.to_csv(agg_output_path, index=False)
 print(f"Aggregated metrics successfully saved to: {agg_output_path}")
 
+# @title Height Accuracy Summary Table
+
+# ------------------------------------------------------------------------------
+# A. SOURCE REGISTRY
+# ------------------------------------------------------------------------------
+# rank sets the X-axis convention: lower rank always becomes the reference.
+SOURCES = {
+    'LiDAR':    dict(col='LiDAR_Height',             rank=0, kind='ref'),
+    'Field':    dict(col='Ground_Truth_Height',      rank=1, kind='ref'),
+    'UAV_raw':  dict(col='Original_Height',          rank=2, kind='uav'),
+    'UAV_mono': dict(col='Tree_Height',              rank=3, kind='uav'),
+    'UAV_cal':  dict(col='Honest_Calibrated_Height', rank=4, kind='uav'),
+}
+
+LABELS = {'Field':    'Field-measured',
+          'UAV_raw':  'Uncalibrated UAV (raw)',
+          'UAV_mono': 'Uncalibrated UAV (monotonic)',
+          'UAV_cal':  'Calibrated UAV'}
+
+# Which reference each calibration epoch was actually trained against
+CAL_TARGET = {target_date_tls: 'LiDAR', target_date_field: 'Field', target_date_als: 'Field'}
+GSD_SWITCH = pd.Timestamp('2026-03-16')
+
+def lidar_label(d):
+    return 'ALS' if d >= target_date_als else 'TLS'
+
+def validation_label(d, ref_key, cmp_key):
+    if SOURCES[cmp_key]['kind'] == 'ref':
+        return 'Reference vs reference'
+    if cmp_key != 'UAV_cal':
+        return 'Uncalibrated'
+    if d in CAL_TARGET:
+        return ('Cross-validated (training target)' if CAL_TARGET[d] == ref_key
+                else 'Cross-validated (independent reference)')
+    return 'Model applied (no CV)'
+
+# ------------------------------------------------------------------------------
+# B. METRICS
+# ------------------------------------------------------------------------------
+def pair_metrics(x, y):
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    lr = stats.linregress(x, y)
+    resid = y - x
+    rmse = np.sqrt(np.mean(resid ** 2))
+    return dict(N=len(x),
+                R2_OLS=lr.rvalue ** 2,        # symmetric: strength of association
+                R2_1to1=r2_score(x, y),       # asymmetric: agreement about the 1:1 line
+                Slope=lr.slope,
+                Intercept=lr.intercept,
+                RMSE=rmse,
+                rRMSE_pct=100 * rmse / np.mean(x),
+                MAE=np.mean(np.abs(resid)),
+                Bias=np.mean(resid))          # positive = comparison overestimates
+
+# ------------------------------------------------------------------------------
+# C. BUILD EVERY AVAILABLE PAIR, EVERY DATE
+# ------------------------------------------------------------------------------
+MIN_N = 5
+rows = []
+
+for date, d in df.groupby('Date'):
+    present = {k: v for k, v in SOURCES.items()
+               if v['col'] in d.columns and d[v['col']].notna().sum() >= MIN_N}
+    keys = sorted(present, key=lambda k: present[k]['rank'])
+
+    for i, ref_key in enumerate(keys):
+        for cmp_key in keys[i + 1:]:
+            # skip UAV-vs-UAV: that measures the size of our own adjustment, not accuracy
+            if present[ref_key]['kind'] == 'uav' and present[cmp_key]['kind'] == 'uav':
+                continue
+
+            sub = d[[present[ref_key]['col'], present[cmp_key]['col']]].dropna()
+            if len(sub) < MIN_N:
+                continue
+
+            rows.append(dict(
+                Date=date,
+                GSD='3 cm' if date >= GSD_SWITCH else '0.6 cm',
+                Reference=lidar_label(date) if ref_key == 'LiDAR' else LABELS[ref_key],
+                Comparison=lidar_label(date) if cmp_key == 'LiDAR' else LABELS[cmp_key],
+                Validation=validation_label(date, ref_key, cmp_key),
+                **pair_metrics(sub.iloc[:, 0], sub.iloc[:, 1])))
+
+long_df = pd.DataFrame(rows)
+
+# ------------------------------------------------------------------------------
+# D. EXPORT: TIDY LONG + PUBLICATION-SHAPED
+# ------------------------------------------------------------------------------
+stamp = df['Date'].max().strftime('%d-%m-%Y')
+base = '/content/drive/My Drive/EucVision'
+
+long_df.to_csv(f'{base}/Height_Accuracy_Metrics_Long_{stamp}.csv', index=False)
+
+pub = long_df.copy()
+pub['Comparison'] = pub['Comparison'] + ' vs ' + pub['Reference']
+pub['Date'] = pub['Date'].dt.strftime('%d %b %Y')
+
+fmt = {'R2_OLS': '{:.2f}', 'R2_1to1': '{:.2f}', 'Slope': '{:.2f}', 'Intercept': '{:+.2f}',
+       'RMSE': '{:.2f}', 'rRMSE_pct': '{:.1f}', 'MAE': '{:.2f}', 'Bias': '{:+.2f}'}
+for c, f in fmt.items():
+    pub[c] = pub[c].map(f.format)
+
+pub = pub[['Date', 'GSD', 'Comparison', 'Validation', 'N',
+           'R2_OLS', 'R2_1to1', 'Slope', 'Intercept',
+           'RMSE', 'rRMSE_pct', 'MAE', 'Bias']]
+pub.columns = ['Date', 'GSD', 'Comparison', 'Validation', 'n',
+               'R\u00b2 (OLS)', 'R\u00b2 (1:1)', 'Slope', 'Intercept',
+               'RMSE (m)', 'rRMSE (%)', 'MAE (m)', 'Bias (m)']
+
+# blank repeated Date/GSD so the Word table reads as grouped blocks
+pub.loc[pub['Date'].duplicated(), ['Date', 'GSD']] = ''
+
+pub.to_csv(f'{base}/Height_Accuracy_Metrics_Table_{stamp}.csv',
+           index=False, encoding='utf-8-sig')
+
+print(f"Long-format metrics: {len(long_df)} comparisons across "
+      f"{long_df['Date'].nunique()} dates")
+display(pub)
+
 # @title Heights Compared
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
-from sklearn.metrics import r2_score
+import scipy.stats as stats
 import matplotlib.ticker as ticker
 
 # 1. Define Google Colab File Paths
@@ -750,8 +901,33 @@ df1.columns = df1.columns.str.strip()
 df2.columns = df2.columns.str.strip()
 df3.columns = df3.columns.str.strip()
 
+# ------------------------------------------------------------------------------
+# CONSISTENCY FIX: use cross-validated calibrated heights, matching Table 3.1
+# ------------------------------------------------------------------------------
+def prefer_cross_validated(df, name):
+    """Swap in the out-of-sample calibrated height so every calibrated figure
+    in the thesis reports the same value. Renames to the original column name
+    so all downstream labels and column lists are unaffected."""
+    if 'Honest_Calibrated_Height_m' in df.columns:
+        df = df.drop(columns=['Calibrated_Height_m'], errors='ignore')
+        df = df.rename(columns={'Honest_Calibrated_Height_m': 'Calibrated_Height_m'})
+        print(f"{name}: using cross-validated calibrated height.")
+    else:
+        print(f"{name}: WARNING — Honest_Calibrated_Height_m not found. "
+              f"Falling back to IN-SAMPLE Calibrated_Height_m; these values will "
+              f"NOT match Table 3.1.")
+    return df
+
+df1 = prefer_cross_validated(df1, 'File 1 (28 Nov 2025)')
+df2 = prefer_cross_validated(df2, 'File 2 (02 Mar 2026)')
+df3 = prefer_cross_validated(df3, 'File 3 (23 Mar 2026)')
+
+# Collector for Table 3.2
+table_32_rows = []
+
 # Helper function to calculate R^2, filter, and plot to avoid repetition
-def plot_height_distribution(df, ref_col, title, cols_to_compare=None, compartment_filter=None, custom_labels=None):
+def plot_height_distribution(df, ref_col, title, cols_to_compare=None, compartment_filter=None,
+                             custom_labels=None, block_label=None, reference_name=None):
     df_copy = df.copy()
 
     # Filter for compartment if specified
@@ -770,25 +946,53 @@ def plot_height_distribution(df, ref_col, title, cols_to_compare=None, compartme
             mask = (df_copy[col] < 0) | (df_copy[col] > 10)
             df_copy.loc[mask, col] = np.nan
 
-    # Calculate R^2 compared to reference column
+    # Calculate R^2 (OLS) and error metrics against the reference column
     r2_dict = {}
+    print(f"\n--- {title} ---")
     for col in all_cols:
-        if col in df_copy.columns:
-            valid_data = df_copy[[ref_col, col]].dropna()
-            if len(valid_data) > 0 and col != ref_col:
-                r2 = r2_score(valid_data[ref_col], valid_data[col])
-                r2_dict[col] = r2
-            else:
-                r2_dict[col] = 1.0
+        if col not in df_copy.columns:
+            continue
+
+        valid_data = df_copy[[ref_col, col]].dropna()
+
+        if col == ref_col or len(valid_data) < 2:
+            r2_dict[col] = 1.0
+            continue
+
+        lr    = stats.linregress(valid_data[ref_col], valid_data[col])
+        resid = valid_data[col] - valid_data[ref_col]
+        rmse  = np.sqrt((resid ** 2).mean())
+        r2_dict[col] = lr.rvalue ** 2
+
+        # Plain-text method name for the table
+        method = custom_labels.get(col, col) if custom_labels else col
+        method = method.replace('\n', ' ').strip()
+
+        table_32_rows.append(dict(
+            Block=block_label or title,
+            Reference=reference_name or ref_col,
+            Method=method,
+            N=len(valid_data),
+            R2_OLS=lr.rvalue ** 2,
+            Slope=lr.slope,
+            Intercept=lr.intercept,
+            RMSE=rmse,
+            rRMSE_pct=100 * rmse / valid_data[ref_col].mean(),
+            MAE=resid.abs().mean(),
+            Bias=resid.mean()))
+
+        print(f"  {method}: n = {len(valid_data)} | R2 = {lr.rvalue ** 2:.2f} | "
+              f"slope = {lr.slope:.2f} | RMSE = {rmse:.2f} | "
+              f"MAE = {resid.abs().mean():.2f} | bias = {resid.mean():+.2f}")
 
     plt.figure(figsize=(FW, HW))
-    df_melted = df_copy.melt(value_vars=[c for c in all_cols if c in df_copy.columns], var_name='Method', value_name='Height (m)')
+    df_melted = df_copy.melt(value_vars=[c for c in all_cols if c in df_copy.columns],
+                             var_name='Method', value_name='Height (m)')
 
     # Formatting labels to include custom names and R^2
     labels = {}
     for col in all_cols:
         if col in df_copy.columns:
-            # Use custom label if provided, otherwise default to the column name
             base_name = col
             if custom_labels and col in custom_labels:
                 base_name = custom_labels[col]
@@ -810,22 +1014,17 @@ def plot_height_distribution(df, ref_col, title, cols_to_compare=None, compartme
         legend=False
     )
 
-    ax = plt.gca() # Get the current axis
-    ax.set_ylim(bottom=0) # Force the y-axis to start at 0
-    ax.yaxis.set_major_locator(ticker.MultipleLocator(1)) # Set major ticks every 1 unit (1m)
+    ax = plt.gca()
+    ax.set_ylim(bottom=0)
+    ax.yaxis.set_major_locator(ticker.MultipleLocator(1))
 
     plt.title(title, pad=15)
-    plt.ylabel('Tree Height (m)')
+    plt.ylabel('Tree height (m)')
     plt.xlabel('')
     plt.tight_layout()
 
-    # Save dynamically based on the title
     safe_title = title.replace(" ", "_").replace(":", "").replace("(", "").replace(")", "")
-
-    # Define the exact Google Drive output path
     output_path = f"/content/drive/My Drive/EucVision/Figures/{safe_title}.png"
-
-    # Save directly to Drive with high-quality settings
     plt.savefig(output_path)
     plt.show()
 
@@ -835,42 +1034,45 @@ def plot_height_distribution(df, ref_col, title, cols_to_compare=None, compartme
 # ==========================================
 november_labels = {
     'LiDAR_Height_m' : 'TLS',
-    'Ground_Truth_Height_m': 'Field-Measured',
-    'Calibrated_Height_m': 'Calibrated',
-    'DTM_Height_m': 'DTM Derived',
-    'SCF_Height_m': 'SCF Derived',
-    'DSM_Height_m': 'DSM Derived'
+    'Ground_Truth_Height_m': 'Field-measured',
+    'Calibrated_Height_m': 'Calibrated UAV',
+    'DTM_Height_m': 'DTM derived',
+    'CSF_Height_m': 'CSF derived',
+    'DSM_Height_m': 'DSM derived'
 }
-
 
 plot_height_distribution(
     df=df1,
     ref_col='LiDAR_Height_m',
-    cols_to_compare=['Ground_Truth_Height_m','Calibrated_Height_m', 'DTM_Height_m', 'SCF_Height_m', 'DSM_Height_m'],
-    title='Tree Height Distribution - 28 Nov 2025',
+    cols_to_compare=['Ground_Truth_Height_m','Calibrated_Height_m', 'DTM_Height_m', 'CSF_Height_m', 'DSM_Height_m'],
+    title='Tree height distribution - 28 Nov 2025',
     compartment_filter=None,
-    custom_labels=november_labels
+    custom_labels=november_labels,
+    block_label='28 November 2025 (0.6 cm GSD)',
+    reference_name='TLS'
 )
 
 # ==========================================
 # FILE 2: 02 March 2026
 # ==========================================
 densification_labels = {
-    'Ground_Truth_Height_m': 'Field-Measured',
-    '4.8_Double_m': '4.8 cm/pt\nCross Hatch',   #\n1/2 Scale, Optimal\n[0.6cm GSD Double Grid]
-    '4.8_Single_m': '4.8 cm/pt\nSingle',   #,\ n1/2 Scale, Optimal\n[0.6cm GSD Single Grid]
-    '2.4_Single_m': '2.4 cm/pt\nSingle',   #,\n1/4 Scale, High\n[0.6cm GSD Single Grid]
-    '19.2_Single_m': '19.2 cm/pt\nSingle', #,\n1/2 Scale, Low\n[0.6cm GSD Single Grid]
-    'Calibrated_Height_m': 'Calibrated'
+    'Ground_Truth_Height_m': 'Field-measured',
+    '4.8_Double_m': '4.8 cm/pt\nCross hatch',
+    '4.8_Single_m': '4.8 cm/pt\nSingle',
+    '2.4_Single_m': '2.4 cm/pt\nSingle',
+    '19.2_Single_m': '19.2 cm/pt\nSingle',
+    'Calibrated_Height_m': 'Calibrated UAV'
 }
 
 plot_height_distribution(
     df=df2,
     ref_col='Ground_Truth_Height_m',
     cols_to_compare=['Calibrated_Height_m', '4.8_Double_m', '4.8_Single_m', '2.4_Single_m', '19.2_Single_m'],
-    title='Tree Height Distribution - 02 March 2026 (Compartment 2)',
-    compartment_filter=2,  # Added filter here!
-    custom_labels=densification_labels
+    title='Tree height distribution - 02 March 2026 (compartment 2)',
+    compartment_filter=2,
+    custom_labels=densification_labels,
+    block_label='2 March 2026, Compartment 2 (0.6 cm GSD)',
+    reference_name='Field-measured'
 )
 
 # ==========================================
@@ -878,22 +1080,52 @@ plot_height_distribution(
 # ==========================================
 march_labels = {
     'LiDAR_Height_m' : 'TLS',
-    'Ground_Truth_Height_m': 'Field-Measured',
-    'Calibrated_Height_m': 'Calibrated',
-    'DTM_3cm_Height_m': 'DTM Derived\n [3cm GSD]', #\n[3cm GSD Double Grid]',
-    'DTM_0.6cm_Height_m': 'DTM Derived\n[0.6cm GSD]', #\n[0.6cm GSD Single Grid]',
-    'SCF_Height_m': 'SCF Derived\n[3cm GSD]', # \n[3cm GSD Double Grid]',
-    'DSM_Height_m': 'DSM Derived\n[3cm GSD]' # \n[3cm GSD Double Grid]'
+    'Ground_Truth_Height_m': 'Field-measured',
+    'Calibrated_Height_m': 'Calibrated UAV',
+    'DTM_3cm_Height_m': 'DTM derived\n [3cm GSD]',
+    'DTM_0.6cm_Height_m': 'DTM derived\n[0.6cm GSD]',
+    'CSF_Height_m': 'CSF derived\n[3cm GSD]',
+    'DSM_Height_m': 'DSM derived\n[3cm GSD]'
 }
 
 plot_height_distribution(
     df=df3,
     ref_col='Ground_Truth_Height_m',
-    cols_to_compare=['Calibrated_Height_m','DTM_3cm_Height_m', 'SCF_Height_m', 'DTM_0.6cm_Height_m', 'DSM_Height_m'],
-    title='Tree Height Distribution - 23 March 2026',
+    cols_to_compare=['Calibrated_Height_m','DTM_3cm_Height_m', 'CSF_Height_m', 'DTM_0.6cm_Height_m', 'DSM_Height_m'],
+    title='Tree height distribution - 23 March 2026',
     compartment_filter=None,
-    custom_labels=march_labels
+    custom_labels=march_labels,
+    block_label='23 March 2026 (3 cm GSD)',
+    reference_name='Field-measured'
 )
+
+# ------------------------------------------------------------------------------
+# TABLE 3.2 EXPORT
+# ------------------------------------------------------------------------------
+long_32 = pd.DataFrame(table_32_rows)
+long_32.to_csv(f'{base_path}Height_Extraction_Method_Metrics_Long.csv', index=False)
+
+pub_32 = long_32.copy()
+pub_32['Comparison'] = pub_32['Method'] + ' vs ' + pub_32['Reference']
+
+fmt = {'R2_OLS': '{:.2f}', 'Slope': '{:.2f}', 'Intercept': '{:+.2f}',
+       'RMSE': '{:.2f}', 'rRMSE_pct': '{:.1f}', 'MAE': '{:.2f}', 'Bias': '{:+.2f}'}
+for c, f in fmt.items():
+    pub_32[c] = pub_32[c].map(f.format)
+
+pub_32 = pub_32[['Block', 'Comparison', 'N', 'R2_OLS', 'Slope',
+                 'RMSE', 'rRMSE_pct', 'MAE', 'Bias']]
+pub_32.columns = ['Date', 'Comparison', 'n', 'R\u00b2 (OLS)', 'Slope',
+                  'RMSE (m)', 'rRMSE (%)', 'MAE (m)', 'Bias (m)']
+
+# blank repeated date so the Word table reads as grouped blocks
+pub_32.loc[pub_32['Date'].duplicated(), 'Date'] = ''
+
+pub_32.to_csv(f'{base_path}Height_Extraction_Method_Table.csv',
+              index=False, encoding='utf-8-sig')
+
+print(f"\nTable 3.2: {len(long_32)} method comparisons exported.")
+display(pub_32)
 
 # @title Flight Report
 import os
@@ -1186,8 +1418,8 @@ def build_master_legend(fig, ax_target):
     legend_elements = []
     for regime in regime_order:
         legend_elements.append(Patch(facecolor=regime_colors[regime], edgecolor='#1a1a1a', linewidth=0.8, label=regime))
-    legend_elements.append(mlines.Line2D([], [], color='none', marker='o', markerfacecolor='#d9d9d9', markeredgecolor='#1a1a1a', markersize=7, label='Top Compartment'))
-    legend_elements.append(mlines.Line2D([], [], color='none', marker='s', markerfacecolor='#d9d9d9', markeredgecolor='#1a1a1a', markersize=7, label='Bottom Compartment'))
+    legend_elements.append(mlines.Line2D([], [], color='none', marker='o', markerfacecolor='#d9d9d9', markeredgecolor='#1a1a1a', markersize=7, label='Top compartment'))
+    legend_elements.append(mlines.Line2D([], [], color='none', marker='s', markerfacecolor='#d9d9d9', markeredgecolor='#1a1a1a', markersize=7, label='Bottom compartment'))
     ax_target.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(0.08, 1.0))
 
 # =====================================================================
@@ -1197,15 +1429,15 @@ fig1, (axWind, axRMSE) = plt.subplots(2, 1, figsize=(MW, 4), sharex=True)
 plt.subplots_adjust(hspace=0.15)
 
 if not df_weather.empty:
-    axWind.plot(df_weather['Date'], df_weather['Wind Speed (m/s)'], color='teal', linewidth=0.8, label='Wind Speed', zorder=3)
+    axWind.plot(df_weather['Date'], df_weather['Wind Speed (m/s)'], color='teal', linewidth=0.8, label='Wind speed', zorder=3)
     flight_wind = df_weather[df_weather['Date'].isin(df_flights['Date'].dt.floor('D'))]
     axWind.scatter(flight_wind['Date'], flight_wind['Wind Speed (m/s)'],
                     color='orange', edgecolor='darkgoldenrod',
-                    s=25, linewidths=0.5, zorder=4, label='UAV Flight Dates')
+                    s=25, linewidths=0.5, zorder=4, label='UAV flight dates')
     axWind.legend(**fancy_legend_kwargs)
 else:
     axWind.text(0.5, 0.5, "No Weather Data Available", va='center', ha='center', transform=axWind.transAxes)
-axWind.set_ylabel('Wind Speed\n(m/s)')
+axWind.set_ylabel('Wind speed\n(m/s)')
 axWind.set_ylim(top=10)
 
 if not df_flights.empty:
@@ -1224,7 +1456,7 @@ axRMSE.tick_params(axis='x', rotation=30)
 add_panel_labels([axWind, axRMSE], 2)
 
 build_master_legend(fig1, axRMSE)
-plt.suptitle('UAV Flights: Wind Conditions & GCP Accuracy', y=0.97)
+plt.suptitle('UAV flights: wind conditions and GCP accuracy', y=0.97)
 save_path_1 = os.path.join(FIGDIR, '2_Row_Flight_Report.png')
 fig1.savefig(save_path_1, dpi=300, bbox_inches='tight')
 plt.show()
@@ -1245,14 +1477,14 @@ axCovComp = fig2.add_subplot(gs_bot[1], sharey=axCovSpacing)
 
 if not df_flights.empty:
     plot_complex_scatter(fig2, axPhotos2, 'Date', 'Photos_per_ha')
-    axPhotos2.set_ylabel('Photos / ha')
+    axPhotos2.set_ylabel('Mean photos per hectare')
 else:
     axPhotos2.axis('off')
     axPhotos2.text(0.5, 0.5, "No Flight Data Available", va='center', ha='center', transform=axPhotos2.transAxes)
 plt.setp(axPhotos2.get_xticklabels(), visible=False)
 
 plot_complex_scatter(fig2, axKeypts, 'Date', 'canopy_match_pct')
-axKeypts.set_ylabel('Canopy Keypoints\nMatched (%)')
+axKeypts.set_ylabel('Canopy keypoints\nmatched (%)')
 axKeypts.xaxis_date()
 axKeypts.xaxis.set_major_formatter(date_fmt)
 axKeypts.tick_params(axis='x', rotation=30, labelbottom=True)
@@ -1284,15 +1516,15 @@ if not df_coverage_bottom.empty:
 axCovSpacing.set_xlim(-0.6, len(spacing_order) - 0.4)
 axCovSpacing.set_xticks(range(len(spacing_order)))
 axCovSpacing.set_xticklabels([spacing_labels[sp].split(' (')[0] for sp in spacing_order])
-axCovSpacing.set_ylabel('Bottom Plots\nCanopy Coverage (%)')
+axCovSpacing.set_ylabel('Bottom plots\ncanopy coverage (%)')
 
 compartment_specs = [('Bottom', 's', BOTTOM_COLOR, 3), ('Top', 'o', TOP_COLOR, 4)]
 plot_grouped_coverage(axCovComp, df_coverage, 'Compartment_P', compartment_specs,
                       cov_unique_dates, cov_date_nums, cov_box_width)
 plt.setp(axCovComp.get_yticklabels(), visible=False)
-axCovComp.set_ylabel('Canopy\nCoverage (%)')
-top_handle = mlines.Line2D([], [], color='none', marker='o', markerfacecolor=TOP_COLOR, markeredgecolor='#1a1a1a', markersize=7, label='Top Plots')
-bottom_handle = mlines.Line2D([], [], color='none', marker='s', markerfacecolor=BOTTOM_COLOR, markeredgecolor='#1a1a1a', markersize=7, label='Bottom Plots')
+axCovComp.set_ylabel('Canopy\ncoverage (%)')
+top_handle = mlines.Line2D([], [], color='none', marker='o', markerfacecolor=TOP_COLOR, markeredgecolor='#1a1a1a', markersize=7, label='Top plots')
+bottom_handle = mlines.Line2D([], [], color='none', marker='s', markerfacecolor=BOTTOM_COLOR, markeredgecolor='#1a1a1a', markersize=7, label='Bottom plots')
 axCovComp.legend(handles=[top_handle, bottom_handle], loc='lower left', ncol=1, fontsize=7)
 
 if not df_coverage.empty:
@@ -1310,13 +1542,13 @@ if shared_xmin and shared_xmax:
 
 pos_top = axKeypts.get_position()
 pos_bot = axCovSpacing.get_position()
-fig2.text(0.5, 0.39, 'Sub-1cm GSD Canopy Coverage (~3cm GSD Reference)',
+fig2.text(0.5, 0.39, 'Sub-1cm GSD canopy coverage (~3cm GSD reference)',
           ha='center', va='center', fontsize=11, fontweight='bold')
 
 add_panel_labels([axPhotos2, axKeypts, axCovSpacing, axCovComp], 4)
 
 build_master_legend(fig2, axKeypts)
-plt.suptitle('UAV Flights: Imaging Quality & Canopy Coverage', y=0.96)
+plt.suptitle('UAV flights: imaging quality and canopy coverage', y=0.96)
 save_path_2 = os.path.join(FIGDIR, '3_Row_Flight_Report.png')
 fig2.savefig(save_path_2, dpi=300, bbox_inches='tight')
 plt.show()
@@ -1357,7 +1589,7 @@ july_24_data = weekly_data[(weekly_data['Plot_Date'].dt.year == 2024) & (weekly_
 highest_july_24_date = july_24_data.loc[july_24_data['Weekly_Precip'].idxmax(), 'Plot_Date']
 
 # UAV Flight Dates
-file_path_df_master = '/content/drive/My Drive/EucVision/UAV_Master_Dataset_25-05-2026.csv'
+file_path_df_master = '/content/drive/My Drive/EucVision/UAV_Master_Dataset_26-06-2026.csv'
 df_master = pd.read_csv(file_path_df_master, low_memory=False)
 flight_dates = pd.to_datetime(df_master['Date'].unique(), errors='coerce')
 flight_dates = flight_dates[flight_dates >= pd.to_datetime('2025-09-01')].union(pd.to_datetime(['2025-02-22']))
@@ -1378,38 +1610,38 @@ fancy_legend_kwargs = {
 # 1. Weekly Precipitation
 axs[0].bar(weekly_data['Plot_Date'], weekly_data['Weekly_Precip'],
            color='#4B8BBE', edgecolor='black', linewidth=0.6,
-           width=6, zorder=3, label='Weekly Rainfall')
-axs[0].set_ylabel('Weekly Rainfall\n(mm)')
+           width=6, zorder=3, label='Weekly rainfall')
+axs[0].set_ylabel('Weekly rainfall\n(mm)')
 
-precip_patch = mpatches.Patch(color='#4B8BBE', label='Weekly Rainfall')
-july24_patch  = mpatches.Patch(color='purple', alpha=0.3, label="July'24 Storm")
-apr_patch     = mpatches.Patch(color='orange', alpha=0.5, label="April'26 Storm")
-may_patch     = mpatches.Patch(color='red',    alpha=0.5, label="May'26 Storm")
+precip_patch = mpatches.Patch(color='#4B8BBE', label='Weekly rainfall')
+july24_patch  = mpatches.Patch(color='purple', alpha=0.3, label="July'24 storm")
+apr_patch     = mpatches.Patch(color='orange', alpha=0.5, label="April'26 storm")
+may_patch     = mpatches.Patch(color='red',    alpha=0.5, label="May'26 storm")
 axs[0].legend(handles=[precip_patch, july24_patch, apr_patch, may_patch], **fancy_legend_kwargs)
 
 # 2. Accumulated Precipitation
 axs[1].plot(weekly_data['Plot_Date'], weekly_data['Cumulative_Precip'],
-            color='#2ca02c', linewidth=1.2, zorder=3, label='Cumulative Rainfall')
+            color='#2ca02c', linewidth=1.2, zorder=3, label='Cumulative rainfall')
 axs[1].fill_between(weekly_data['Plot_Date'], weekly_data['Cumulative_Precip'],
                     color='#2ca02c', alpha=0.2, zorder=1)
-axs[1].set_ylabel('Cumulative Rainfall\n(mm)')
+axs[1].set_ylabel('Cumulative rainfall\n(mm)')
 axs[1].legend(**fancy_legend_kwargs)
 
 # 3. Daily Temperature
-axs[2].plot(df_weather['Date'], df_weather['Max Deg.C'], color='#d62728', linewidth=0.8, label='Max Temp', zorder=3)
-axs[2].plot(df_weather['Date'], df_weather['Min Deg.C'], color='#1f77b4', linewidth=0.8, label='Min Temp', zorder=3)
+axs[2].plot(df_weather['Date'], df_weather['Max Deg.C'], color='#d62728', linewidth=0.8, label='Max temp', zorder=3)
+axs[2].plot(df_weather['Date'], df_weather['Min Deg.C'], color='#1f77b4', linewidth=0.8, label='Min temp', zorder=3)
 axs[2].fill_between(df_weather['Date'], df_weather['Min Deg.C'], df_weather['Max Deg.C'], color='grey', alpha=0.15, zorder=1)
-axs[2].set_ylabel('Temperature\n(°C)')
+axs[2].set_ylabel('Daily temperature\n(°C)')
 axs[2].legend(**fancy_legend_kwargs)
 
 # 4. Daily Wind & Flight Dates
-axs[3].plot(df_weather['Date'], df_weather['Wind Speed (m/s)'], color='teal', linewidth=0.8, label='Wind Speed', zorder=3)
-axs[3].set_ylabel('Wind Speed\n(m/s)')
+axs[3].plot(df_weather['Date'], df_weather['Wind Speed (m/s)'], color='teal', linewidth=0.8, label='Mean wind speed', zorder=3)
+axs[3].set_ylabel('Daily wind speed\n(m/s)')
 
 flight_wind = df_weather[df_weather['Date'].isin(flight_dates)]
 axs[3].scatter(flight_wind['Date'], flight_wind['Wind Speed (m/s)'],
                color='orange', edgecolor='darkgoldenrod',
-               s=12, linewidths=0.5, zorder=4, label='UAV Flight Dates') # Smaller dots (12)
+               s=12, linewidths=0.5, zorder=4, label='UAV flight dates') # Smaller dots (12)
 axs[3].legend(**fancy_legend_kwargs)
 
 # ------------------------------------------------
@@ -1448,7 +1680,7 @@ axs[3].set_xlim(df_weather['Date'].min(), df_weather['Date'].max())
 
 add_panel_labels([axs[0], axs[1], axs[2], axs[3]], 4)
 
-plt.suptitle('Multi-Year Environmental Overview and UAV Survey Schedule', y=0.93)
+plt.suptitle('Multi-year environmental overview and UAV survey schedule', y=0.93)
 plt.savefig('/content/drive/My Drive/EucVision/Figures/Weather_Overview.png')
 plt.show()
 
@@ -1572,7 +1804,7 @@ fig, axs = plt.subplots(3, 2, figsize=(MW, 6), sharex=True)
 
 # Increased hspace to 0.25 so lifted legends don't hit the x-axis above them
 plt.subplots_adjust(hspace=0.25, wspace=0.25)
-fig.suptitle("Environmental Conditions During the UAV Survey Period (Sep 2025 – May 2026)", y=0.96)
+fig.suptitle("Environmental conditions during the UAV survey period (Sep 2025 – May 2026)", y=0.96)
 
 # Base legend parameters with lifted position
 fancy_legend_kwargs = {
@@ -1585,21 +1817,21 @@ fancy_legend_kwargs = {
 # =====================================================================
 
 # --- Panel 1 (0,0): Solar Radiation (UPDATED) ---
-axs[0, 0].plot(weekly_rad['Plot_Date'], weekly_rad['Weekly_Solar_Rad'], color='#d35400', linewidth=0.8, zorder=3, label='Weekly Cumulative Solar Energy')
+axs[0, 0].plot(weekly_rad['Plot_Date'], weekly_rad['Weekly_Solar_Rad'], color='#d35400', linewidth=0.8, zorder=3, label='Weekly cumulative solar energy')
 axs[0, 0].fill_between(weekly_rad['Plot_Date'], 0, weekly_rad['Weekly_Solar_Rad'], color='#d35400', alpha=0.2, zorder=2)
-axs[0, 0].set_ylabel('Weekly Cumulative\nSolar Energy (MJ/m²)')
+axs[0, 0].set_ylabel('Weekly cumulative\nsolar energy (MJ/m²)')
 axs[0, 0].legend(**fancy_legend_kwargs)
 
 # --- Panel 2 (1,0): Vapor Pressure Deficit (SWAPPED) ---
-axs[1, 0].plot(df_weather['Date'], df_weather[vpd_max_col], color='#8e44ad', linewidth=0.8, label='Max Vapor Pressure Deficit')
-axs[1, 0].set_ylabel('Daily Vapor Pressure Deficit\n(kPa)')
+axs[1, 0].plot(df_weather['Date'], df_weather[vpd_max_col], color='#8e44ad', linewidth=0.8, label='Max vapor pressure deficit')
+axs[1, 0].set_ylabel('Daily vapor pressure deficit\n(kPa)')
 axs[1, 0].legend(**fancy_legend_kwargs)
 
 # --- Panel 3 (2,0): Air Temp (SWAPPED) ---
-axs[2, 0].plot(df_weather['Date'], df_weather['Max Deg.C'], color='#d62728', linewidth=0.8, label='Max Air Temp')
-axs[2, 0].plot(df_weather['Date'], df_weather['Min Deg.C'], color='#1f77b4', linewidth=0.8, label='Min Air Temp')
+axs[2, 0].plot(df_weather['Date'], df_weather['Max Deg.C'], color='#d62728', linewidth=0.8, label='Max air temp')
+axs[2, 0].plot(df_weather['Date'], df_weather['Min Deg.C'], color='#1f77b4', linewidth=0.8, label='Min air temp')
 axs[2, 0].fill_between(df_weather['Date'], df_weather['Min Deg.C'], df_weather['Max Deg.C'], color='grey', alpha=0.15)
-axs[2, 0].set_ylabel('Daily Air Temperature\n(°C)')
+axs[2, 0].set_ylabel('Daily air temperature\n(°C)')
 axs[2, 0].legend(ncol=2, **fancy_legend_kwargs) # Force 2 columns
 
 
@@ -1609,26 +1841,26 @@ axs[2, 0].legend(ncol=2, **fancy_legend_kwargs) # Force 2 columns
 
 # --- Panel 4 (0,1): Weekly Precip ---
 axs[0, 1].bar(weekly_data['Plot_Date'], weekly_data['Weekly_Precip'], color='#4B8BBE', edgecolor='black', linewidth=0.5, width=6, zorder=3)
-axs[0, 1].set_ylabel('Weekly Rainfall\n(mm)')
+axs[0, 1].set_ylabel('Weekly rainfall\n(mm)')
 
-precip_patch = mpatches.Patch(color='#4B8BBE', label='Weekly Rainfall')
-apr_patch = mpatches.Patch(color='orange', alpha=0.3, label="April'26 Storm")
-may_patch = mpatches.Patch(color='red', alpha=0.2, label="May'26 Storm")
+precip_patch = mpatches.Patch(color='#4B8BBE', label='Weekly rainfall')
+apr_patch = mpatches.Patch(color='orange', alpha=0.3, label="April'26 storm")
+may_patch = mpatches.Patch(color='red', alpha=0.2, label="May'26 storm")
 
 axs[0, 1].legend(handles=[precip_patch, apr_patch, may_patch], **fancy_legend_kwargs)
 
 # --- Panel 5 (1,1): Soil Moisture (North VWC Only) ---
 mean_vwc = daily_gems[['soil_vwc_north_max', 'soil_vwc_north_min']].mean(axis=1)
-axs[1, 1].plot(daily_gems['DateOnly'], mean_vwc, color='#27ae60', linewidth=0.8, label='Mean Volumetric Water Content')
+axs[1, 1].plot(daily_gems['DateOnly'], mean_vwc, color='#27ae60', linewidth=0.8, label='Mean soil moisture')
 axs[1, 1].fill_between(daily_gems['DateOnly'], daily_gems['soil_vwc_north_min'], daily_gems['soil_vwc_north_max'], color='#2ecc71', alpha=0.3)
-axs[1, 1].set_ylabel('Daily Soil Moisture\n(%)')
+axs[1, 1].set_ylabel('Hourly soil moisture\n(%)')
 axs[1, 1].legend(**fancy_legend_kwargs)
 
 # --- Panel 6 (2,1): Soil Temp (South Only) ---
-axs[2, 1].plot(daily_gems['DateOnly'], daily_gems['soil_temp_south_max'], color='#d62728', linewidth=0.8, label='Max Soil Temp')
-axs[2, 1].plot(daily_gems['DateOnly'], daily_gems['soil_temp_south_min'], color='#1f77b4', linewidth=0.8, label='Min Soil Temp')
+axs[2, 1].plot(daily_gems['DateOnly'], daily_gems['soil_temp_south_max'], color='#d62728', linewidth=0.8, label='Max soil temp')
+axs[2, 1].plot(daily_gems['DateOnly'], daily_gems['soil_temp_south_min'], color='#1f77b4', linewidth=0.8, label='Min soil temp')
 axs[2, 1].fill_between(daily_gems['DateOnly'], daily_gems['soil_temp_south_min'], daily_gems['soil_temp_south_max'], color='grey', alpha=0.15)
-axs[2, 1].set_ylabel('Daily Soil Temp\n(°C)')
+axs[2, 1].set_ylabel('Daily soil temperature\n(°C)')
 axs[2, 1].legend(ncol=2, **fancy_legend_kwargs) # Force 2 columns
 
 
@@ -1669,7 +1901,7 @@ add_panel_labels([axs[0, 0], axs[0, 1], axs[1, 0], axs[1, 1],axs[2, 0],axs[2, 1]
 plt.savefig('/content/drive/My Drive/EucVision/Figures/3x2_Environmental_Conditions.png')
 plt.show()
 
-# @title Stand Overview
+# @title Tree Metrics Overview
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -1718,14 +1950,14 @@ def fit_true_gam(dates_series, values_series, n_splines, lam=0.6):
 
 # Custom tuning per metric! Crown area gets stiffened (lam=50) to cross the 7-month gap safely.
 metrics = [
-    {'col': 'Crown_Area',       'ylabel': 'Crown Area (m²)',  'splines': 15,  'lam': 50.0},
-    {'col': 'Calibrated_Height', 'ylabel': 'Height (m)',       'splines': 15, 'lam': 50.0},
-    {'col': 'Basal_Area',      'ylabel': 'Basal Area (cm²)', 'splines': 12, 'lam': 0.6}
+    {'col': 'Crown_Area',       'ylabel': 'Mean crown area\n per tree (m²)',  'splines': 15,  'lam': 50.0},
+    {'col': 'Calibrated_Height', 'ylabel': 'Mean calibrated height\n per tree (m)',       'splines': 15, 'lam': 50.0},
+    {'col': 'Basal_Area',      'ylabel': 'Mean basal area\n per tree (cm²)', 'splines': 12, 'lam': 0.6}
 ]
 
 # (Ensure FW is defined globally in your notebook)
 fig, axes = plt.subplots(3, 1, figsize=(FW, FW), sharex=True)
-fig.suptitle("Stand Metrics by Planting Density", fontweight='bold')
+fig.suptitle("Individual-tree metrics by spacing", fontweight='bold')
 
 spacings_asc = sorted(df['Spacing'].dropna().unique())
 spacings_sorted = sorted(spacings_asc, reverse=True)
@@ -1810,11 +2042,11 @@ for i, ax in enumerate(axes):
             y_span = ymax - ymin
             y_pos = ymin + (y_span * 0.85)
 
-            text_x_pos = v_date + pd.Timedelta(days=5)
+            text_x_pos = v_date - pd.Timedelta(days=5)
 
             ax.text(text_x_pos, y_pos, f'Age: {months//12}',
                     color='purple', fontweight='bold',
-                    verticalalignment='center', horizontalalignment='left')
+                    verticalalignment='center', horizontalalignment='right')
 
 # --------------------------------------------------------------------------
 # FINAL RENDER
@@ -1977,8 +2209,8 @@ plot_event_grid(
     value_col='Alive_Count',
     value_func=alive_value_func,
     marker='o',
-    suptitle="Alive Trees by Species & Spacing Over 4 Key Events",
-    ylabel='Total Alive Trees',
+    suptitle="Alive trees by species and spacing over 4 key events",
+    ylabel='Total alive trees',
     save_path='/content/drive/My Drive/EucVision/Figures/Alive_Trees_4_Key_Dates.png'
 )
 
@@ -2002,8 +2234,8 @@ plot_event_grid(
     value_col='Stems_per_ha',
     value_func=stems_per_ha_value_func,
     marker='o',
-    suptitle="Actual Stems/ha by Species & Spacing Over 4 Key Events",
-    ylabel='Actual Stems / ha',
+    suptitle="Actual stems/ha by species and spacing over 4 key events",
+    ylabel='Actual stems/ha',
     save_path='/content/drive/My Drive/EucVision/Figures/Stems_per_ha_4_Key_Dates.png'
 )
 
@@ -2015,9 +2247,9 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from pygam import LinearGAM, s
 
-# Calculate Cylindrical Stem Volume and Crown Volume
-df['Stem_Volume'] = (df['Basal_Area'] / 10000) * df['Calibrated_Height']
-df['Crown_Volume'] = df['Crown_Area'] * df['Calibrated_Height']
+# Calculate Conical Stem Volume and Crown Volume
+df['Stem_Volume'] = (1/3) * (df['Basal_Area'] / 10000) * df['Calibrated_Height']
+df['Crown_Volume'] = (1/3) * df['Crown_Area'] * df['Calibrated_Height']
 
 # ==============================================================================
 # HELPER: Extract Top 20% Individuals (Strictly by Height!)
@@ -2181,7 +2413,7 @@ def plot_dominant_2x4(df_source,
                ncol=len(by_label))
 
     fig.suptitle(
-        f"Dominant {top_metric_name} and {bot_metric_name} by Spacing and Species",
+        f"Dominant {top_metric_name} and {bot_metric_name} by spacing and species",
         fontweight='bold', y=1.04
     )
 
@@ -2202,8 +2434,8 @@ def plot_dominant_2x4(df_source,
 # Figure 1: Crown Area (top) + Tree Height (bottom)
 plot_dominant_2x4(
     df_source=df,
-    top_metric_col='Crown_Area',       top_metric_name='Crown Area',  top_ylabel='Crown Area (m²)',
-    bot_metric_col='Calibrated_Height', bot_metric_name='Tree Height', bot_ylabel='Height (m)',
+    top_metric_col='Crown_Area',       top_metric_name='crown area',  top_ylabel='Mean crown area\n per tree (m²)',
+    bot_metric_col='Calibrated_Height', bot_metric_name='calibrated height', bot_ylabel='Mean calibrated height\n per tree (m)',
     csv_prefix='crown_height',
     n_splines=12
 )
@@ -2212,11 +2444,106 @@ plot_dominant_2x4(
 # (Make sure 'Crown_Volume' and 'Stem_Volume' match your exact column names in df)
 plot_dominant_2x4(
     df_source=df,
-    top_metric_col='Crown_Volume',  top_metric_name='Crown Volume',  top_ylabel='Cylinder-Equivalent\nCrown Volume (m³)',
-    bot_metric_col='Stem_Volume', bot_metric_name='Stem Volume', bot_ylabel='Cylinder-Equivalent\nStem Volume (m³)',
+    top_metric_col='Crown_Volume',  top_metric_name='crown volume',  top_ylabel='Mean cone-equivalent\ncrown volume per tree (m³)',
+    bot_metric_col='Stem_Volume', bot_metric_name='stem volume', bot_ylabel='Mean cone-equivalent\nstem volume per tree (m³)',
     csv_prefix='Stem_Crown_Volume',
     n_splines=12
 )
+
+# @title Curtis' Relative Density
+# Run after the "Graph Template" and "Height Calibration" cells — uses their
+# df, species_colors, legend_order_2, and FW directly, no reload or copy.
+
+final_date = pd.to_datetime('2026-06-26')
+
+# RD = BA / sqrt(Dq)  (Curtis, 1982, Forest Science 28(1), 92-94;
+#                       thresholds per Kotze & Du Toit, 2012, SA Forestry Handbook)
+CURTIS_K = np.pi / 40000
+
+# Total trees ever tracked per plot — Tree_ID persists on every row even after
+# mortality wipes Stem_Diameter to NaN, so this scans the full df's history.
+planted_single = (df.loc[df['Culture'] == 'Single']
+                   .groupby(['Spacing', 'Species', 'Plot'])['Tree_ID']
+                   .nunique())
+planted_mixed = (df.loc[df['Culture'] == 'Mix']
+                  .groupby(['Spacing', 'Plot'])['Tree_ID']
+                  .nunique())
+
+final_mask = (df['Date'] == final_date) & df['Stem_Diameter'].notna()
+
+density_rows = []
+
+for (spacing, species, plot), group in df.loc[final_mask & (df['Culture'] == 'Single')].groupby(
+        ['Spacing', 'Species', 'Plot']):
+    nominal_n = 10000 / (float(spacing) ** 2)
+    baseline_n = planted_single.get((spacing, species, plot), 0)
+    if baseline_n == 0:
+        continue
+    stems_per_ha = nominal_n * (len(group) / baseline_n)
+    qmd_cm = np.sqrt((group['Stem_Diameter'] ** 2).mean())
+    rd = stems_per_ha * CURTIS_K * (qmd_cm ** 1.5)
+    density_rows.append({'Spacing': float(spacing), 'Species': species, 'Plot': plot, 'RD': rd})
+
+for (spacing, plot), group in df.loc[final_mask & (df['Culture'] == 'Mix')].groupby(['Spacing', 'Plot']):
+    nominal_n = 10000 / (float(spacing) ** 2)
+    baseline_n = planted_mixed.get((spacing, plot), 0)
+    if baseline_n == 0:
+        continue
+    stems_per_ha = nominal_n * (len(group) / baseline_n)
+    qmd_cm = np.sqrt((group['Stem_Diameter'] ** 2).mean())
+    rd = stems_per_ha * CURTIS_K * (qmd_cm ** 1.5)
+    density_rows.append({'Spacing': float(spacing), 'Species': 'Mixed', 'Plot': plot, 'RD': rd})
+
+if not density_rows:
+    print(f"No RD data found for {final_date.date()} — check df['Date'] values.")
+else:
+    final_rd = (pd.DataFrame(density_rows)
+                .groupby(['Spacing', 'Species'])['RD']
+                .mean()
+                .reset_index()
+                .sort_values('Spacing'))
+
+    # Evenly-spaced categorical x-positions, so 5x5m sits at a fixed gap from
+    # 3x3m rather than being pushed out by its actual numeric spacing value.
+    unique_spacings = sorted(final_rd['Spacing'].unique())
+    spacing_pos = {sp: i for i, sp in enumerate(unique_spacings)}
+    final_rd['Spacing_Pos'] = final_rd['Spacing'].map(spacing_pos)
+
+    fig, ax = plt.subplots(figsize=(FW, 4.0))
+
+    rd_thresholds = [
+        (12,  'firebrick',  '-',  'RD > 12 (Zone of imminent mortality)'),
+        (6,   'darkorange', '--', 'RD = 6 - 12 (Fully stocked)'),
+        (3,   'black',       ':',  'RD = 3 - 6 (Zone of increasing competition)'),
+        (1.5,   'midnightblue',       '-.',  'RD < 1.5 (Excessively open and exposed)'),
+    ]
+    for rd_val, color, ls, label in rd_thresholds:
+        ax.axhline(rd_val, color=color, linestyle=ls, linewidth=1.0, zorder=1)
+        ax.text(0.99, rd_val, label, color=color, fontweight='bold',
+                ha='right', va='bottom', transform=ax.get_yaxis_transform())
+
+    for species in legend_order_2:
+        sp_data = final_rd[final_rd['Species'] == species].sort_values('Spacing_Pos')
+        if sp_data.empty:
+            continue
+        color = species_colors[species]
+        z_order = 3 if species == 'Mixed' else 2
+        ax.plot(sp_data['Spacing_Pos'], sp_data['RD'], color=color, linewidth=1.5,
+                marker='o', markersize=5, label=species, zorder=z_order)
+
+    ax.set_xticks(range(len(unique_spacings)))
+    ax.set_xticklabels([f"{int(s)}x{int(s)}m" for s in unique_spacings])
+    ax.set_xlim(-0.3, len(unique_spacings) + 0.8 )
+    ax.set_xlabel('Spacing', fontweight='bold')
+    ax.set_ylabel('Relative density (RD)', fontweight='bold')
+    ax.set_ylim(bottom=-0.3)  # small padding so the 0-line label has room
+    ax.set_yticks([0, 1.5, 3, 6, 9, 12])
+    ax.set_title(f"Curtis' relative density by spacing and species\n({final_date.strftime('%-d %B %Y')})")
+    ax.legend(loc='upper left', ncol=2, bbox_to_anchor=(0.00, 0.95))
+
+    plt.tight_layout()
+    plt.savefig('/content/drive/My Drive/EucVision/Figures/Final_RD_By_Spacing_Species.png')
+    plt.show()
 
 # @title Density & Crown Index
 
@@ -2274,7 +2601,7 @@ for (date, spacing, species, plot), group in df_clean[df_clean['Culture'] == 'Si
     qmd_cm = np.sqrt((group['Stem_Diameter'] ** 2).mean())
     sdi = stems_per_ha * ((qmd_cm / 25) ** 1.605)
     rdi_rows.append({'Date': date, 'Spacing': float(spacing), 'Species': species,
-                     'Plot': plot, 'RDI': (sdi / 1100) * 100})
+                     'Plot': plot, 'RDI': (sdi / 800) * 100})
 
 # Mixed stands — pool all species within each plot, label as 'Mixed'
 for (date, spacing, plot), group in df_clean[df_clean['Culture'] == 'Mix'].groupby(
@@ -2283,7 +2610,7 @@ for (date, spacing, plot), group in df_clean[df_clean['Culture'] == 'Mix'].group
     qmd_cm = np.sqrt((group['Stem_Diameter'] ** 2).mean())
     sdi = stems_per_ha * ((qmd_cm / 25) ** 1.605)
     rdi_rows.append({'Date': date, 'Spacing': float(spacing), 'Species': 'Mixed',
-                     'Plot': plot, 'RDI': (sdi / 1100) * 100})
+                     'Plot': plot, 'RDI': (sdi / 800) * 100})
 
 rdi_plot_df = pd.DataFrame(rdi_rows)
 
@@ -2322,8 +2649,8 @@ fig, axes = plt.subplots(nrows=2, ncols=len(spacings), figsize=(8, 4),
                          sharex=True, sharey='row')
 
 row_meta = [
-    ('CCI', 'Crown Cover\nIndex (%)', cci_plot_df, 10),
-    ('RDI', 'Relative Stand\nDensity Index (%)', rdi_plot_df, 10)
+    ('CCI', 'Crown cover\nindex (%)', cci_plot_df, 10),
+    ('RDI', 'Relative stand\ndensity index (%)', rdi_plot_df, 10)
 ]
 
 # Unpack the custom n_splines for each row
@@ -2372,16 +2699,16 @@ for row_idx, (metric_col, ylabel, plot_df, n_splines) in enumerate(row_meta):
         if row_idx == 0:  # CCI Thresholds
             ax.axhline(100, color='purple', linestyle='--', linewidth=1.0, zorder=1)
             if col_idx == len(spacings) - 1:
-                ax.text(0.98, 102, 'Canopy Closure', color='purple',
+                ax.text(0.98, 102, 'Canopy closure', color='purple',
                         fontweight='bold', ha='right', transform=ax.get_yaxis_transform())
 
         else: # RDI Thresholds
             ax.axhline(35, color='darkorange', linestyle='--', linewidth=1.0, zorder=1)
             ax.axhline(60, color='firebrick', linestyle='--', linewidth=1.0, zorder=1)
             if col_idx == len(spacings) - 1:
-                ax.text(0.98, 36, 'Competition Onset', color='darkorange',
+                ax.text(0.98, 36, 'Competition onset', color='darkorange',
                         fontweight='bold', ha='right', transform=ax.get_yaxis_transform())
-                ax.text(0.98, 61, 'Self-Thinning Zone', color='firebrick',
+                ax.text(0.98, 61, 'Self-thinning zone', color='firebrick',
                         fontweight='bold', ha='right', transform=ax.get_yaxis_transform())
 
         ax.set_xlabel('')
@@ -2426,7 +2753,7 @@ fig.legend(by_label.values(), by_label.keys(),
            loc='lower center', bbox_to_anchor=(0.5, 0.91),
            ncol=len(by_label))
 
-fig.suptitle("Relative Stand Density Index and Crown Cover Index by Spacing", fontweight='bold', y=1.04)
+fig.suptitle("Relative stand density index and crown cover index by spacing", fontweight='bold', y=1.04)
 
 add_panel_labels(axes.flatten(), 8)
 
@@ -2453,7 +2780,7 @@ from pygam import LinearGAM, s
 # ==============================================================================
 start_date = pd.to_datetime('2025-09-01')
 
-file_path_df_master = '/content/drive/My Drive/EucVision/UAV_Master_Dataset_25-05-2026.csv'
+file_path_df_master = '/content/drive/My Drive/EucVision/UAV_Master_Dataset_26-06-2026.csv'
 df_master = pd.read_csv(file_path_df_master, low_memory=False)
 df_master['Date'] = pd.to_datetime(df_master['Date'], errors='coerce')
 
@@ -2780,6 +3107,7 @@ from pygam import LinearGAM, s  # Swapped statsmodels LOESS for pygam
 # 1. LOAD & CLEAN DATA
 # =====================================================================
 global_start_date = pd.to_datetime('2025-09-01')
+global_end_date = pd.to_datetime('2026-05-31')
 
 # --- A. Weather Data (Impact) ---
 path_new_25 = '/content/drive/My Drive/EucVision/impact_NDVI_2025-01-01_2025-12-31.xlsx'
@@ -2791,17 +3119,17 @@ df_weather = pd.concat([df_25, df_26], ignore_index=True)
 
 df_weather['Date'] = pd.to_datetime(df_weather['Date'], errors='coerce')
 df_weather = df_weather.dropna(subset=['Date']).sort_values('Date').reset_index(drop=True)
-df_weather = df_weather[df_weather['Date'] >= global_start_date]
+df_weather = df_weather[(df_weather['Date'] >= global_start_date) & (df_weather['Date'] <= global_end_date)]
 
 # --- B. Drone Data (Master Dataset) ---
-file_path_df_master = '/content/drive/My Drive/EucVision/UAV_Master_Dataset_25-05-2026.csv'
+file_path_df_master = '/content/drive/My Drive/EucVision/UAV_Master_Dataset_26-06-2026.csv'
 df_master = pd.read_csv(file_path_df_master, low_memory=False)
 df_master['Date'] = pd.to_datetime(df_master['Date'], errors='coerce')
 
 # MASKING & FILTERING
 borrowed_dates = pd.to_datetime(['2025-11-14', '2026-03-16', '2026-04-08', '2026-04-13', '2026-04-29'])
 df_master.loc[df_master['Date'].isin(borrowed_dates), 'Crown_Area_m2'] = np.nan
-df_master = df_master[df_master['Date'] >= global_start_date]
+df_master = df_master[(df_master['Date'] >= global_start_date) & (df_master['Date'] <= global_end_date)]
 
 if 'Culture' in df_master.columns:
     df_master = df_master[df_master['Culture'] == 'Single']
@@ -2837,7 +3165,7 @@ df_gems = pd.concat([df_gems_march, df_gems_new], ignore_index=True)
 df_gems['Datetime'] = pd.to_datetime(df_gems['Datetime'], errors='coerce')
 df_gems = df_gems.dropna(subset=['Datetime'])
 
-df_gems = df_gems[df_gems['Datetime'] >= global_start_date].copy()
+df_gems = df_gems[(df_gems['Datetime'] >= global_start_date) & (df_gems['Datetime'] <= global_end_date)].copy()
 df_gems['DateOnly'] = df_gems['Datetime'].dt.floor('D')
 
 # Clean numerical columns
@@ -2892,7 +3220,7 @@ def apply_gam_derivative(df_subset, metric_col, n_splines):
 # Set up 4x1 Grid
 fig, axs = plt.subplots(4, 1, figsize=(FW, 7), sharex=True)
 plt.subplots_adjust(hspace=0.2)
-fig.suptitle("Stand Dynamics & Environmental Drivers", y=0.94)
+fig.suptitle("Stand dynamics and environmental drivers", y=0.94)
 
 fancy_legend_kwargs = {
     'loc': 'upper center',
@@ -2914,8 +3242,8 @@ axs[1].set_ylim(bottom = 0, top=0.15)
 # --- Panel 1 (0): Crown Area ---
 # --- Panel 2 (1): Height ---
 metrics = [
-    {'col': 'Crown_Area_m2', 'ylabel': 'Crown Growth\n(m² / week)', 'ax': axs[0]},
-    {'col': 'Calibrated_Height_m', 'ylabel': 'Height Growth\n(m / week)', 'ax': axs[1]}
+    {'col': 'Crown_Area_m2', 'ylabel': 'Mean crown\n growth rate\n per tree (m²/week)', 'ax': axs[0]},
+    {'col': 'Calibrated_Height_m', 'ylabel': 'Mean calibrated height\n growth rate\n per tree (m/week)', 'ax': axs[1]}
 ]
 
 for metric_info in metrics:
@@ -2948,12 +3276,12 @@ for metric_info in metrics:
 
 # --- Panel 3 (2): Solar Radiation (UPDATED TO WEEKLY CUMULATIVE ENERGY) ---
 if not weekly_rad.empty and 'Weekly_Solar_Rad' in weekly_rad.columns:
-    axs[2].plot(weekly_rad['Plot_Date'], weekly_rad['Weekly_Solar_Rad'], color='#d35400', linewidth=1.0, zorder=3, label='Weekly Cumulative Solar Energy')
+    axs[2].plot(weekly_rad['Plot_Date'], weekly_rad['Weekly_Solar_Rad'], color='#d35400', linewidth=1.0, zorder=3, label='Weekly cumulative solar energy')
     axs[2].fill_between(weekly_rad['Plot_Date'], 0, weekly_rad['Weekly_Solar_Rad'], color='#d35400', alpha=0.2, zorder=2)
 
-axs[2].set_ylabel('Weekly Cumulative\nSolar Energy (MJ/m²)')
+axs[2].set_ylabel('Weekly cumulative\nsolar energy (MJ/m²)')
 
-solar_patch = mpatches.Patch(color='#d35400', label='Weekly Cumulative Solar Energy')
+solar_patch = mpatches.Patch(color='#d35400', label='Weekly cumulative solar energy')
 moisture_patch = mpatches.Patch(color='lightgray', alpha=0.4, label='Mediterranean Summer Drought')
 apr_patch = mpatches.Patch(color='orange', alpha=0.3, label="April'26 Storm")
 may_patch = mpatches.Patch(color='red', alpha=0.2, label="May'26 Storm")
@@ -2967,10 +3295,10 @@ axs[2].legend(
 # --- Panel 4 (3): Soil Moisture (North VWC Only) ---
 if not daily_gems.empty and 'soil_vwc_north_max' in daily_gems.columns:
     mean_vwc = daily_gems[['soil_vwc_north_max', 'soil_vwc_north_min']].mean(axis=1)
-    axs[3].plot(daily_gems['DateOnly'], mean_vwc, color='#27ae60', linewidth=1.0, label='Mean Volumetric Water Content')
+    axs[3].plot(daily_gems['DateOnly'], mean_vwc, color='#27ae60', linewidth=1.0, label='Mean soil moisture')
     axs[3].fill_between(daily_gems['DateOnly'], daily_gems['soil_vwc_north_min'], daily_gems['soil_vwc_north_max'], color='#2ecc71', alpha=0.3)
 
-axs[3].set_ylabel('Soil Moisture\n(%)')
+axs[3].set_ylabel('Hourly soil moisture\n(%)')
 axs[3].legend(**fancy_legend_kwargs)
 
 
@@ -3023,7 +3351,7 @@ from pygam import LinearGAM, s
 start_date = pd.to_datetime('2025-10-31')
 
 # --- Drone Data ---
-file_path_df_master = '/content/drive/My Drive/EucVision/UAV_Master_Dataset_25-05-2026.csv'
+file_path_df_master = '/content/drive/My Drive/EucVision/UAV_Master_Dataset_26-06-2026.csv'
 df_master = pd.read_csv(file_path_df_master, low_memory=False)
 
 df_master['Date'] = pd.to_datetime(df_master['Date'], errors='coerce')
@@ -3172,7 +3500,7 @@ def plot_growth_2x4(df_source,
                loc='lower center', bbox_to_anchor=(0.5, 0.91),
                ncol=len(ordered_labels))
 
-    fig.suptitle(f"Dominant Crown Area and Height Velocity by Spacing and Species",
+    fig.suptitle(f"Dominant crown area and calibrated height growth rate by spacing and species",
                  fontweight='bold', y=1.03)
     add_panel_labels(axes.flatten(), 8)
 
@@ -3192,10 +3520,10 @@ plot_growth_2x4(
     df_source=df_master,
     top_metric_col='Crown_Area_m2',
     top_metric_name='Crown Area',
-    top_ylabel='Area Velocity (m²/wk)',
+    top_ylabel='Mean area\n growth rate\n per tree (m²/week)',
     bot_metric_col='Calibrated_Height_m',
     bot_metric_name='Tree Height',
-    bot_ylabel='Height Velocity (m/wk)',
+    bot_ylabel='Mean calibrated height\n growth rate\n per tree (m/week)',
     csv_prefix='velocity_crown_height',
     user_spline_count=MANUAL_SPLINE_COUNT  # Feeds straight into the plotter
 )
@@ -3208,39 +3536,54 @@ import matplotlib.pyplot as plt
 # ---------------------------------------------------------
 # 1. UNIFIED DATA PREPARATION
 # ---------------------------------------------------------
-# Assuming 'df' is already loaded in your Colab environment
-df_vigour = df.dropna(subset=['Crown_Area', 'Calibrated_Height', 'Species', 'Basal_Area', 'Culture']).copy()
+
+# every Crown_Area/Height row on dates without a Basal_Area reading.
+df_vigour = df.dropna(subset=['Crown_Area', 'Calibrated_Height', 'Species', 'Culture']).copy()
 df_vigour['MonthYear'] = df_vigour['Date'].dt.to_period('M')
 
-# Calculate Cylindrical Stem Volume and Crown Volume
-df_vigour['Stem_Volume'] = (df_vigour['Basal_Area'] / 10000) * df_vigour['Calibrated_Height']
-df_vigour['Crown_Volume'] = df_vigour['Crown_Area'] * df_vigour['Calibrated_Height']
-
+# Full data kept through June 2026 (no early cutoff) so the Autumn '26
+# interpolation has a real anchor point on both sides. Winter '26 is
+# trimmed at display time only — see Section 3/4.
+df_vigour['Stem_Volume'] = (1/3) *  np.where(
+    df_vigour['Basal_Area'].notna(),
+    (df_vigour['Basal_Area'] / 10000) * df_vigour['Calibrated_Height'],
+    np.nan
+)
+df_vigour['Crown_Volume'] = (1/3) *  df_vigour['Crown_Area'] * df_vigour['Calibrated_Height']
 
 # ---------------------------------------------------------
 # 2. MONTHLY AGGREGATION (Single Culture, Dominant by Height)
 # ---------------------------------------------------------
-metrics_to_agg = ['Crown_Area', 'Crown_Volume', 'Calibrated_Height', 'Stem_Volume', 'Basal_Area']
+# Two independent metric groups, each with its own dominant-tree filter and
+# its own dropna, so Basal_Area's sparsity can't strip Crown_Area/Height rows.
+metric_groups = {
+    'area_height': ['Crown_Area', 'Crown_Volume', 'Calibrated_Height'],
+    'stem':        ['Stem_Volume', 'Basal_Area'],
+}
 
-# Isolate Pure Stands (Monocultures)
 df_pure = df_vigour[df_vigour['Culture'] == 'Single'].copy()
 
-# Step 1: Calculate the 80th percentile height threshold for each specific group
-df_pure['height_threshold'] = df_pure.groupby(['Spacing', 'Species', 'Plot', 'MonthYear'])['Calibrated_Height'].transform(lambda x: x.quantile(0.80))
+monthly_frames = []
+for group_name, cols in metric_groups.items():
+    df_group = df_pure.dropna(subset=cols).copy()
+    if df_group.empty:
+        continue
+    df_group['height_threshold'] = df_group.groupby(
+        ['Spacing', 'Species', 'Plot', 'MonthYear']
+    )['Calibrated_Height'].transform(lambda x: x.quantile(0.80))
+    df_dominant = df_group[df_group['Calibrated_Height'] >= df_group['height_threshold']].copy()
+    agg = df_dominant.groupby(['Spacing', 'Species', 'MonthYear'])[cols].mean()
+    monthly_frames.append(agg)
 
-# Step 2: Filter the dataframe to KEEP ONLY the trees that meet this height threshold
-df_dominant = df_pure[df_pure['Calibrated_Height'] >= df_pure['height_threshold']].copy()
-
-# Step 3: Now calculate the simple mean of all metrics for these exact trees
-df_monthly_pure = df_dominant.groupby(['Spacing', 'Species', 'MonthYear'])[metrics_to_agg].mean().reset_index()
-
-df_monthly = df_monthly_pure.copy()
+# Outer-join the two groups on (Spacing, Species, MonthYear) — rows only
+# present in one group keep NaN for the other group's columns.
+df_monthly = pd.concat(monthly_frames, axis=1).reset_index()
 
 # ---------------------------------------------------------
 # 3. SEASONAL MAPPING & COLOR PALETTES
 # ---------------------------------------------------------
 min_month = df_monthly['MonthYear'].min()
-max_month = df_monthly['MonthYear'].max()
+max_month = df_monthly['MonthYear'].max()  # extends through June 2026
 all_months_continuous = pd.period_range(start=min_month, end=max_month, freq='M')
 
 def get_season(period):
@@ -3262,7 +3605,6 @@ for period in all_months_continuous:
     s = get_season(period)
     if s not in ordered_seasons:
         ordered_seasons.append(s)
-    # This keeps updating until the season changes, leaving the LAST month of the season
     season_end_months[s] = period
 
 season_palettes = {
@@ -3276,34 +3618,43 @@ season_counts = {'Summer': 0, 'Autumn': 0, 'Winter': 0, 'Spring': 0, 'Year One':
 custom_colors = []
 for s in ordered_seasons:
     if s == "Year One":
-        custom_colors.append('#4d4d4d') # Dark Grey
+        custom_colors.append('#4d4d4d')
     else:
         base_season = s.split(" ")[0]
         shade_idx = min(season_counts[base_season], len(season_palettes[base_season]) - 1)
         custom_colors.append(season_palettes[base_season][shade_idx])
         season_counts[base_season] += 1
 
+# Winter '26 (June 2026 alone) is too thin a slice to display as its own
+# season — it's kept in the underlying data (used above to interpolate the
+# Autumn '26 endpoint) but dropped here at display time only.
+display_cutoff = pd.Period('2026-05', freq='M')
+display_seasons = [s for s in ordered_seasons if season_end_months[s] <= display_cutoff]
+
+season_color_map = dict(zip(ordered_seasons, custom_colors))
+display_colors = [season_color_map[s] for s in display_seasons]
+
 spacings = sorted(df_monthly['Spacing'].unique())
-handles = [plt.Rectangle((0,0),1,1, color=custom_colors[k]) for k in range(len(ordered_seasons))]
+handles = [plt.Rectangle((0,0),1,1, color=season_color_map[s]) for s in display_seasons]
 
 # ---------------------------------------------------------
 # 4. MASTER PLOTTING LOOP (2x8 Grid Setup)
 # ---------------------------------------------------------
 plot_layouts = [
     {
-        'title': 'Dominant Seasonal Growth: Crown Area vs Height',
+        'title': 'Dominant seasonal growth: crown area vs calibrated height',
         'filename': '/content/drive/My Drive/EucVision/Figures/seasonal_growth_area_height_2x8.png',
         'metrics': [
-            ('Crown_Area', 'Crown Area (m²)'),
-            ('Calibrated_Height', 'Height (m)')
+            ('Crown_Area', 'Mean crown area\n per tree (m²)'),
+            ('Calibrated_Height', 'Mean calibrated height\n per tree (m)')
         ]
     },
     {
-        'title': 'Dominant Seasonal Growth: Crown Volume vs Stem Volume',
+        'title': 'Dominant seasonal growth: crown volume vs stem volume',
         'filename': '/content/drive/My Drive/EucVision/Figures/seasonal_growth_volumes_2x8.png',
         'metrics': [
-            ('Crown_Volume', 'Cylinder-Equivalent\nCrown Volume(m³)') ,
-            ('Stem_Volume', 'Cylinder-Equivalent\nStem Volume(m³)')
+            ('Crown_Volume', 'Mean cone-equivalent\ncrown volume per tree (m³)') ,
+            ('Stem_Volume', 'Mean cone-equivalent\nstem volume per tree (m³)')
         ]
     }
 ]
@@ -3318,41 +3669,37 @@ for layout in plot_layouts:
             else:
                 ax = axes[row_idx, col_idx]
 
-            # Pivot on the current metric
             sub = df_monthly[df_monthly['Spacing'] == spacing]
             pivot_data = sub.pivot(index='Species', columns='MonthYear', values=metric)
             pivot_data = pivot_data.reindex(columns=all_months_continuous)
             pivot_data = pivot_data.interpolate(method='linear', axis=1, limit_direction='both')
 
-            # Extract the absolute values at the end of each valid season
+            # Extracted over the FULL season list so Autumn '26's diff still
+            # subtracts the correct predecessor even though Winter '26 itself
+            # won't be plotted.
             end_of_season_months = [season_end_months[s] for s in ordered_seasons]
             season_abs_df = pivot_data[end_of_season_months]
             season_abs_df.columns = ordered_seasons
 
-            # Calculate growth during each season
             rate_df = season_abs_df.diff(axis=1)
-            # The first season ("Year One") gets its full absolute value from 0m
             rate_df.iloc[:, 0] = season_abs_df.iloc[:, 0]
 
             rate_df = rate_df.clip(lower=0)
             rate_df = rate_df.reindex(legend_order).fillna(0)
+            rate_df = rate_df[display_seasons]   # trim Winter '26 for display only
 
-            rate_df.plot(kind='bar', stacked=True, ax=ax, color=custom_colors, legend=False, width=0.8)
+            rate_df.plot(kind='bar', stacked=True, ax=ax, color=display_colors, legend=False, width=0.8)
 
             ax.set_xlabel('')
-            ax.set_title('') # Clear default string titles
-
+            ax.set_title('')
             ax.grid(axis='x', visible=False)
-
-            # --- STYLING LOGIC ---
-            # Add 20% empty space to the top of the y-axis for ALL subplots
             ax.margins(y=0.15)
 
             if row_idx == 0:
                 ax.legend([], [],
                           title=f"{int(spacing)}x{int(spacing)}m",
-                          loc='upper center',        # Anchors the bottom center of the legend box...
-                          bbox_to_anchor=(0.5, 1.1), # ...to the exact top middle of the subplot (x=0.5, y=1.0)
+                          loc='upper center',
+                          bbox_to_anchor=(0.5, 1.1),
                           title_fontsize=9,
                           labelspacing=0,
                           borderpad=0.3)
@@ -3370,15 +3717,11 @@ for layout in plot_layouts:
 
             add_panel_labels(axes.flatten(), 8)
 
-    # Master Legend (inherits legend.* rcParams)
-    fig.legend(handles[::-1], ordered_seasons[::-1], title='Growth Season',
+    fig.legend(handles[::-1], display_seasons[::-1], title='Growth Season',
                loc='center left', bbox_to_anchor=(0.90, 0.5))
 
-    # Rectangle constraints updated to fit the legend safely
     plt.suptitle(layout['title'])
     plt.tight_layout(rect=[0, 0, 0.90, 1.00])
-
-    # Columns moved 20% closer
     plt.subplots_adjust(hspace=0.1, wspace=0.22)
 
     plt.savefig(layout['filename'], dpi=300, bbox_inches='tight')
@@ -3525,18 +3868,18 @@ pca_df_combined = pca_df_combined.join(metadata)
 # ---------------------------------------------------------
 fig, axes = plt.subplots(nrows=3, ncols=2, figsize=(FW, 9))
 fig.suptitle(
-    'Growth Dynamics PCA with 95% Confidence Ellipses',
+    'Growth dynamics PCA with 95% confidence ellipses',
     fontweight='bold', y=1
 )
 axes = axes.flatten()
 
 plot_configs = [
-    {'df': pca_df_crown,    'pca_model': pca_crown,    'col': 'Species', 'title': 'Crown Area by Species'},
-    {'df': pca_df_crown,    'pca_model': pca_crown,    'col': 'Spacing', 'title': 'Crown Area by Spacing'},
-    {'df': pca_df_height,   'pca_model': pca_height,   'col': 'Species', 'title': 'Height by Species'},
-    {'df': pca_df_height,   'pca_model': pca_height,   'col': 'Spacing', 'title': 'Height by Spacing'},
-    {'df': pca_df_combined, 'pca_model': pca_combined, 'col': 'Species', 'title': 'Crown Area and Height by Species'},
-    {'df': pca_df_combined, 'pca_model': pca_combined, 'col': 'Spacing', 'title': 'Crown Area and Height by Spacing'},
+    {'df': pca_df_crown,    'pca_model': pca_crown,    'col': 'Species', 'title': 'Crown area by species'},
+    {'df': pca_df_crown,    'pca_model': pca_crown,    'col': 'Spacing', 'title': 'Crown area by spacing'},
+    {'df': pca_df_height,   'pca_model': pca_height,   'col': 'Species', 'title': 'Calibrated height by species'},
+    {'df': pca_df_height,   'pca_model': pca_height,   'col': 'Spacing', 'title': 'Calibrated height by spacing'},
+    {'df': pca_df_combined, 'pca_model': pca_combined, 'col': 'Species', 'title': 'Crown area and calibrated height by species'},
+    {'df': pca_df_combined, 'pca_model': pca_combined, 'col': 'Spacing', 'title': 'Crown area and calibrated height by spacing'},
 ]
 
 for i, config in enumerate(plot_configs):
@@ -3618,8 +3961,8 @@ for i, config in enumerate(plot_configs):
 
     pc1_var = pca_model.explained_variance_ratio_[0] * 100
     pc2_var = pca_model.explained_variance_ratio_[1] * 100
-    ax.set_xlabel(f'PC1: Overall Size ({pc1_var:.1f}%)')
-    ax.set_ylabel(f'PC2: Growth Timing ({pc2_var:.1f}%)')
+    ax.set_xlabel(f'PC1: Overall size ({pc1_var:.1f}%)')
+    ax.set_ylabel(f'PC2: Growth timing ({pc2_var:.1f}%)')
 
     if show_legend:
         ax.legend(
@@ -3677,7 +4020,7 @@ REFERENCE_SPACING = 1                   # LMM reference level for spacing
 
 # ── 2. Load & prepare data ────────────────────────────────────────────────────
 df_raw = pd.read_csv(
-    '/content/drive/My Drive/EucVision/UAV_Master_Dataset_25-05-2026.csv'
+    '/content/drive/My Drive/EucVision/UAV_Master_Dataset_26-06-2026.csv'
 )
 df_raw["Date"] = pd.to_datetime(df_raw["Date"])
 
@@ -4169,7 +4512,7 @@ def get_label(x):
     return f"{stems:,} stems/ha".replace(",", " ")
 
 # Updated Directory
-file_path = '/content/drive/My Drive/EucVision/UAV_Master_Dataset_25-05-2026.csv'
+file_path = '/content/drive/My Drive/EucVision/UAV_Master_Dataset_26-06-2026.csv'
 df_video_1 = pd.read_csv(file_path, low_memory=False)
 
 df_video_1['Date'] = pd.to_datetime(df_video_1['Date'], errors='coerce')

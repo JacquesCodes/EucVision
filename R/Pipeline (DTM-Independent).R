@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# EUCVISION: PLOT-LEVEL LiDAR POINT CLOUD PROCESSING PIPELINE USING LAS ####
+# PLOT-LEVEL LiDAR POINT CLOUD PROCESSING PIPELINE USING LAS ####
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
 # Project: EucXylo (https://eucxylo.sun.ac.za/)

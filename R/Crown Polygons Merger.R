@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# EUCVISION: BATCH SPATIAL DATA MERGING & CSV INTEGRATION PIPELINE
+# BATCH SPATIAL DATA MERGING & CSV INTEGRATION PIPELINE
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
@@ -182,9 +182,9 @@ for (folder_path in dataset_folders) {
   print(paste("   Alive on", file_date, ":", alive_count))
   print(paste("   Trees flagged as Dead since baseline:", legacy_sf_count - alive_count))
   
-  # ---------------------------------------------------------
+  # ────────────────────────────────────────────────────────────────────────────
   # FAILSAFE 1: Global Count Check & Diagnostic Output
-  # ---------------------------------------------------------
+  # ────────────────────────────────────────────────────────────────────────────
   raw_sf_count <- nrow(combined_sf)
   is_legacy <- FALSE
   
@@ -224,9 +224,9 @@ for (folder_path in dataset_folders) {
                "\n-> Check the console output directly above this error to see which plots are mismatched!"))
   }
   
-  # ---------------------------------------------------------
+  # ────────────────────────────────────────────────────────────────────────────
   # FAILSAFE 2: Pre-Bind Plot Consistency Check
-  # ---------------------------------------------------------
+  # ────────────────────────────────────────────────────────────────────────────
   csv_plot_counts <- csv_for_binding %>% group_by(Plot) %>% summarise(Expected = n(), .groups = "drop")
   
   sf_plot_counts <- combined_sf %>% 
@@ -247,9 +247,9 @@ for (folder_path in dataset_folders) {
     print("   -> FAILSAFE 2 PASSED: CSV rows perfectly align with spatial plots.")
   }
   
-  # ---------------------------------------------------------
+  # ────────────────────────────────────────────────────────────────────────────
   # Data Merging (Safe to proceed)
-  # ---------------------------------------------------------
+  # ────────────────────────────────────────────────────────────────────────────
   if (is_legacy) {
     print("   -> Binding data and filtering out dead geometries...")
     combined_sf <- bind_cols(csv_for_binding, combined_sf) %>% st_as_sf()
@@ -259,9 +259,9 @@ for (folder_path in dataset_folders) {
     combined_sf <- bind_cols(csv_for_binding, combined_sf) %>% st_as_sf()
   }
   
-  # ---------------------------------------------------------
+  # ────────────────────────────────────────────────────────────────────────────
   # FAILSAFE 3: Final Spatial Output Check
-  # ---------------------------------------------------------
+  # ────────────────────────────────────────────────────────────────────────────
   if (nrow(combined_sf) != alive_count) {
     stop(paste("CRITICAL ERROR - FAILSAFE 3 TRIGGERED in", date_folder, "- Final count mismatch after processing!"))
   } else {
@@ -272,9 +272,9 @@ for (folder_path in dataset_folders) {
   # Force the tree polygons to inherit the Master Spatial Baseline Metrics CRS immediately
   st_crs(combined_sf) <- st_crs(baseline_trees)
   
-  # ---------------------------------------------------------
+  # ────────────────────────────────────────────────────────────────────────────
   # FAILSAFE 4: Spatial Grid Reversal QA/QC Check
-  # ---------------------------------------------------------
+  # ────────────────────────────────────────────────────────────────────────────
   print("   -> Running Failsafe 4: Spatial Grid Reversal Check...")
   
   # Format target features with UID to match spatial baseline

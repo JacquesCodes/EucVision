@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# EUCVISION: DATA VISUALIZATION & ITD (INDIVIDUAL TREE DETECTION) PIPELINE ####
+# DATA VISUALIZATION & ITD (INDIVIDUAL TREE DETECTION) PIPELINE ####
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
 # Project: EucXylo (https://eucxylo.sun.ac.za/)

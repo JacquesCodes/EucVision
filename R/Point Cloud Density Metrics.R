@@ -1,18 +1,12 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# EUCVISION: SITE-WIDE COVERAGE & DENSITY METRICS (0.6cm vs 3cm)
+# SITE-WIDE COVERAGE & DENSITY METRICS (0.6cm vs 3cm)
+# ──────────────────────────────────────────────────────────────────────────────
+# Author: Jacques Vermeulen
+# Project: EucXylo (https://eucxylo.sun.ac.za/)
 # ──────────────────────────────────────────────────────────────────────────────
 # Description: Generates permanent 0.25m Hit Count rasters for Ground and Canopy.
 #              Extracts total Plot Area, Point Counts, and true Planar Densities.
 #              Applies a strict Boolean overlay to calculate sub-1cm % Coverage.
-#
-# UPDATED (v3):
-#  1. A date is processed as long as EITHER 3cm or 0.6cm point clouds exist.
-#  2. Fallback logic correctly identifies and routes historical layout files vs 
-#     modern layout files based on date.
-#  3. single-catalog fallback added for combined Top+Bottom files.
-#  4. Has_3cm_Flight / Has_06cm_Flight columns track data availability in the CSV.
-#  5. Exclude list added to skip specific folders.
-#  6. Target Date Override added for rapid single-folder testing.
 # ──────────────────────────────────────────────────────────────────────────────
 
 library(lidR)

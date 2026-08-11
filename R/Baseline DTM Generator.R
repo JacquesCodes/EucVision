@@ -1,5 +1,5 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# EUCVISION: END-TO-END BASELINE SITE-LEVEL DTM GENERATION 
+# END-TO-END BASELINE SITE-LEVEL DTM GENERATION 
 # ──────────────────────────────────────────────────────────────────────────────
 # Author: Jacques Vermeulen
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
@@ -82,10 +82,9 @@ toc()
 # 4. Noise Removal (Statistical Outlier Removal) ####
 # ──────────────────────────────────────────────────────────────────────────────
 
-# NEW: Load the dense, cropped point clouds instead of the raw ones
 ctg_raw <- readLAScatalog(cropped_dir)
 
-# --- CRITICAL SITE-LEVEL ENGINE SETTINGS ---
+# --- SITE-LEVEL ENGINE SETTINGS ---
 opt_independent_files(ctg_raw) <- FALSE   # Ignores original file overlaps
 opt_chunk_size(ctg_raw) <- 100            # Breaks the site into 100x100m geometric tiles
 opt_chunk_buffer(ctg_raw) <- 5            # 5m buffer is plenty for noise removal
@@ -97,7 +96,7 @@ opt_output_files(ctg_raw) <- paste0(denoised_dir, "Tile_{XLEFT}_{YBOTTOM}_denois
 tic()
 print("Applying Statistical Outlier Removal (SOR) to the entire site...")
 
-# Apply STRICT SOR algorithm to ruthlessly prune sub-surface pit noise
+# Apply SOR algorithm to remove sub-surface pit noise
 ctg_denoised <- classify_noise(ctg_raw, sor(k = 25, m = 1.2))
 toc()
 
