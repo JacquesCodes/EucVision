@@ -1255,7 +1255,7 @@ p_combined_3x2 <- (c_sp_3x2 | c_sc_3x2) /
 # Height bumped by 0.2 in to give the main title breathing room
 ggsave(
   file.path(OUTPUT_DIR, "combined_3x2_curves.png"), p_combined_3x2,
-  width = 6.30, height = 6.7, units = "in", dpi = 300,
+  width = 6.30, height = 6.7, units = "in", dpi = 900,
   device = ragg::agg_png
 )
 

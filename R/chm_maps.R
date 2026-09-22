@@ -37,7 +37,7 @@ save_smoothed_output <- TRUE  # Set to TRUE to export the smoothed CHM back to t
 
 # === CONFIGURE BATCH AND PLOT ===
 # Change this single variable for each new batch!
-date_folder <- "12. 22 January 2026"
+date_folder <- "40. 12 August 2026"
 
 # Define the specific plot number to visualize (Used if process_whole_site == FALSE)
 Number <- 28

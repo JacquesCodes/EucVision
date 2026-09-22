@@ -407,17 +407,21 @@ def plot_dynamic_panel_grid(date_str, custom_title, reference_label='TLS'):
     has_reference = 'LiDAR_Height' in df_date.columns and not df_date['LiDAR_Height'].isnull().all()
     has_field = 'Ground_Truth_Height' in df_date.columns and not df_date['Ground_Truth_Height'].isnull().all()
 
+    # Define conditional colors for panel (a) and (b) based on the date
+    color_a = 'purple' if date_str == '2026-06-26' else 'blue'
+    color_b = 'darkgreen' if date_str == '2026-06-26' else 'orange'
+
     if has_reference and has_field:
         plots = [
-            ('LiDAR_Height', 'Original_Height', f'Reference {reference_label} height (m)', 'Uncalibrated UAV height (m)', f'Uncalibrated UAV vs reference {reference_label}', 'blue', False),
-            ('LiDAR_Height', 'Honest_Calibrated_Height', f'Reference {reference_label} height (m)', 'Calibrated UAV height (m)', f'Calibrated UAV vs reference {reference_label}', 'orange', False),
+            ('LiDAR_Height', 'Original_Height', f'Reference {reference_label} height (m)', 'Uncalibrated UAV height (m)', f'Uncalibrated UAV vs reference {reference_label}', color_a, False),
+            ('LiDAR_Height', 'Honest_Calibrated_Height', f'Reference {reference_label} height (m)', 'Calibrated UAV height (m)', f'Calibrated UAV vs reference {reference_label}', color_b, False),
             ('LiDAR_Height', 'Ground_Truth_Height', f'Reference {reference_label} height (m)', 'Field-measured height (m)', f'Field-measured vs reference {reference_label}', 'teal', True),
             ('Ground_Truth_Height', 'Honest_Calibrated_Height', 'Field-measured height (m)', 'Calibrated UAV height (m)', 'Calibrated UAV vs field-measured', 'purple', True)
         ]
     elif has_reference:
         plots = [
-            ('LiDAR_Height', 'Original_Height', f'{reference_label} height (m)', 'Uncalibrated UAV height (m)', f'Uncalibrated UAV vs reference {reference_label}', 'blue', False),
-            ('LiDAR_Height', 'Honest_Calibrated_Height', f'{reference_label} height (m)', 'Calibrated UAV height (m)', f'Calibrated UAV vs reference {reference_label}', 'orange', False)
+            ('LiDAR_Height', 'Original_Height', f'{reference_label} height (m)', 'Uncalibrated UAV height (m)', f'Uncalibrated UAV vs reference {reference_label}', color_a, False),
+            ('LiDAR_Height', 'Honest_Calibrated_Height', f'{reference_label} height (m)', 'Calibrated UAV height (m)', f'Calibrated UAV vs reference {reference_label}', color_b, False)
         ]
     else:
         plots = [
@@ -902,6 +906,25 @@ df2.columns = df2.columns.str.strip()
 df3.columns = df3.columns.str.strip()
 
 # ------------------------------------------------------------------------------
+# GLOBAL SEMANTIC COLOR MAPPING
+# ------------------------------------------------------------------------------
+# These hex codes match your original plot aesthetic but lock them to methods
+GLOBAL_METHOD_COLORS = {
+    'LiDAR_Height_m': '#606060',           # TLS: Dark Grey
+    'Ground_Truth_Height_m': '#71B49F',    # Field: Teal
+    'Calibrated_Height_m': '#92A1C6',      # Calibrated UAV: Blue
+    'DTM_Height_m': '#E58F6F',             # DTM: Orange
+    'DTM_3cm_Height_m': '#E58F6F',         # DTM 3cm: Orange
+    'DTM_0.6cm_Height_m': '#C27A5B',       # DTM 0.6cm: Darker Orange
+    'CSF_Height_m': '#D48CB3',             # CSF: Pink
+    'DSM_Height_m': '#E7C647',             # DSM: Yellow
+    '4.8_Double_m': '#A4C664',             # Cross hatch: Green
+    '4.8_Single_m': '#E58F6F',             # Single grid 4.8: Orange
+    '2.4_Single_m': '#D48CB3',             # Single grid 2.4: Pink
+    '19.2_Single_m': '#E7C647'             # Single grid 19.2: Yellow
+}
+
+# ------------------------------------------------------------------------------
 # CONSISTENCY FIX: use cross-validated calibrated heights, matching Table 3.1
 # ------------------------------------------------------------------------------
 def prefer_cross_validated(df, name):
@@ -985,7 +1008,13 @@ def plot_height_distribution(df, ref_col, title, cols_to_compare=None, compartme
               f"slope = {lr.slope:.2f} | RMSE = {rmse:.2f} | "
               f"MAE = {resid.abs().mean():.2f} | bias = {resid.mean():+.2f}")
 
-    plt.figure(figsize=(FW, HW))
+    # Set figure size based on your constants (assuming FW and HW are defined globally in your setup)
+    # Using 10, 5 here as fallbacks in case FW/HW are missing from this snippet
+    try:
+        plt.figure(figsize=(FW, HW))
+    except NameError:
+        plt.figure(figsize=(10, 5))
+
     df_melted = df_copy.melt(value_vars=[c for c in all_cols if c in df_copy.columns],
                              var_name='Method', value_name='Height (m)')
 
@@ -1004,13 +1033,20 @@ def plot_height_distribution(df, ref_col, title, cols_to_compare=None, compartme
 
     df_melted['Method_Label'] = df_melted['Method'].map(labels)
 
+    # Build the custom palette dynamically for this specific figure
+    custom_palette = {}
+    for col in all_cols:
+        if col in df_copy.columns:
+            # Map the complex final label back to the raw column's assigned hex color
+            custom_palette[labels[col]] = GLOBAL_METHOD_COLORS.get(col, '#999999')
+
     sns.violinplot(
         x='Method_Label',
         y='Height (m)',
         hue='Method_Label',
         data=df_melted,
         inner="quartile",
-        palette="Set2",
+        palette=custom_palette,
         legend=False
     )
 
@@ -1057,10 +1093,10 @@ plot_height_distribution(
 # ==========================================
 densification_labels = {
     'Ground_Truth_Height_m': 'Field-measured',
-    '4.8_Double_m': '4.8 cm/pt\nCross hatch',
-    '4.8_Single_m': '4.8 cm/pt\nSingle',
-    '2.4_Single_m': '2.4 cm/pt\nSingle',
-    '19.2_Single_m': '19.2 cm/pt\nSingle',
+    '4.8_Double_m': '4.8 cm pt⁻¹\nCross hatch',
+    '4.8_Single_m': '4.8 cm pt⁻¹\nSingle',
+    '2.4_Single_m': '2.4 cm pt⁻¹\nSingle',
+    '19.2_Single_m': '19.2 cm pt⁻¹\nSingle',
     'Calibrated_Height_m': 'Calibrated UAV'
 }
 
@@ -1125,7 +1161,6 @@ pub_32.to_csv(f'{base_path}Height_Extraction_Method_Table.csv',
               index=False, encoding='utf-8-sig')
 
 print(f"\nTable 3.2: {len(long_32)} method comparisons exported.")
-display(pub_32)
 
 # @title Flight Report
 import os
@@ -1326,6 +1361,51 @@ except FileNotFoundError:
     print("Warning: Weather files not found. Daily wind plot will be empty.")
     df_weather = pd.DataFrame(columns=['Date', 'Wind Speed (m/s)'])
 
+
+# =====================================================================
+# 1.D PRINT SUMMARY STATISTICS
+# =====================================================================
+# Merge daily wind speed into df_flights so we can group it by regime
+df_flights['Date_day'] = df_flights['Date'].dt.floor('D')
+df_weather_daily = df_weather.copy()
+df_weather_daily['Date_day'] = df_weather_daily['Date'].dt.floor('D')
+df_flights = pd.merge(df_flights, df_weather_daily[['Date_day', 'Wind Speed (m/s)']].drop_duplicates(), on='Date_day', how='left')
+
+# Print the requested statistics
+
+print("\n--- Wind Speed (m/s) ---")
+print(df_flights.groupby('regime')['Wind Speed (m/s)'].agg(['mean', 'std', 'count','min','max']).round(1))
+
+print("\n--- Mean Photos per Hectare ---")
+print(df_flights.groupby('regime')['Photos_per_ha'].agg(['mean', 'std', 'count','min','max']).round(1))
+
+print("\n--- GCP RMSE (m) ---")
+# Using round(3) here because RMSE values are very small (e.g., 0.01)
+print(df_flights.groupby('regime')['GCP RMS error (m)'].agg(['mean', 'std', 'count','min','max']).round(3))
+
+print("\n--- Canopy Matched % ---")
+print(df_flights.groupby('regime')['canopy_match_pct'].agg(['mean', 'std', 'count','min','max']).round(1))
+
+from scipy.stats import pearsonr
+
+# 1. Isolate the two columns and drop any rows with missing data (NaNs)
+# Pearson correlation will fail if missing values are included.
+df_corr = df_flights[['GCP RMS error (m)', 'Wind Speed (m/s)']].dropna()
+
+# 2. Calculate Pearson r and p-value
+r_val, p_val = pearsonr(df_corr['Wind Speed (m/s)'], df_corr['GCP RMS error (m)'])
+n_flights = len(df_corr)
+
+# 3. Format the p-value nicely (e.g., if it's very small, write p < 0.001)
+if p_val < 0.001:
+    p_str = "< 0.001"
+else:
+    p_str = f"{p_val:.3f}"
+
+# 4. Print the final formatted string
+print(f"\nGround control point (GCP) RMSE relationship with "
+      f"flight-time wind speed (Pearson r = {r_val:.2f}, p = {p_str}, n = {n_flights} flights).")
+
 # =====================================================================
 # 2. SHARED STYLE, HELPERS & DATE BOUNDS
 # =====================================================================
@@ -1431,13 +1511,14 @@ plt.subplots_adjust(hspace=0.15)
 if not df_weather.empty:
     axWind.plot(df_weather['Date'], df_weather['Wind Speed (m/s)'], color='teal', linewidth=0.8, label='Wind speed', zorder=3)
     flight_wind = df_weather[df_weather['Date'].isin(df_flights['Date'].dt.floor('D'))]
+    print(f"Avg wind speed across {flight_wind['Date'].nunique()} flight dates: {flight_wind['Wind Speed (m/s)'].mean():.2f} m/s")
     axWind.scatter(flight_wind['Date'], flight_wind['Wind Speed (m/s)'],
                     color='orange', edgecolor='darkgoldenrod',
                     s=25, linewidths=0.5, zorder=4, label='UAV flight dates')
     axWind.legend(**fancy_legend_kwargs)
 else:
     axWind.text(0.5, 0.5, "No Weather Data Available", va='center', ha='center', transform=axWind.transAxes)
-axWind.set_ylabel('Wind speed\n(m/s)')
+axWind.set_ylabel('Wind speed\n(m s⁻¹)')
 axWind.set_ylim(top=10)
 
 if not df_flights.empty:
@@ -1477,7 +1558,7 @@ axCovComp = fig2.add_subplot(gs_bot[1], sharey=axCovSpacing)
 
 if not df_flights.empty:
     plot_complex_scatter(fig2, axPhotos2, 'Date', 'Photos_per_ha')
-    axPhotos2.set_ylabel('Mean photos per hectare')
+    axPhotos2.set_ylabel('Mean photos ha⁻¹')
 else:
     axPhotos2.axis('off')
     axPhotos2.text(0.5, 0.5, "No Flight Data Available", va='center', ha='center', transform=axPhotos2.transAxes)
@@ -1636,7 +1717,7 @@ axs[2].legend(**fancy_legend_kwargs)
 
 # 4. Daily Wind & Flight Dates
 axs[3].plot(df_weather['Date'], df_weather['Wind Speed (m/s)'], color='teal', linewidth=0.8, label='Mean wind speed', zorder=3)
-axs[3].set_ylabel('Daily wind speed\n(m/s)')
+axs[3].set_ylabel('Daily wind speed\n(m s⁻¹)')
 
 flight_wind = df_weather[df_weather['Date'].isin(flight_dates)]
 axs[3].scatter(flight_wind['Date'], flight_wind['Wind Speed (m/s)'],
@@ -1817,9 +1898,9 @@ fancy_legend_kwargs = {
 # =====================================================================
 
 # --- Panel 1 (0,0): Solar Radiation (UPDATED) ---
-axs[0, 0].plot(weekly_rad['Plot_Date'], weekly_rad['Weekly_Solar_Rad'], color='#d35400', linewidth=0.8, zorder=3, label='Weekly cumulative solar energy')
+axs[0, 0].plot(weekly_rad['Plot_Date'], weekly_rad['Weekly_Solar_Rad'], color='#d35400', linewidth=0.8, zorder=3, label='Weekly cumulative solar radiation')
 axs[0, 0].fill_between(weekly_rad['Plot_Date'], 0, weekly_rad['Weekly_Solar_Rad'], color='#d35400', alpha=0.2, zorder=2)
-axs[0, 0].set_ylabel('Weekly cumulative\nsolar energy (MJ/m²)')
+axs[0, 0].set_ylabel('Weekly cumulative\nsolar radiation (MJ m⁻²)')
 axs[0, 0].legend(**fancy_legend_kwargs)
 
 # --- Panel 2 (1,0): Vapor Pressure Deficit (SWAPPED) ---
@@ -2235,7 +2316,7 @@ plot_event_grid(
     value_func=stems_per_ha_value_func,
     marker='o',
     suptitle="Actual stems/ha by species and spacing over 4 key events",
-    ylabel='Actual stems/ha',
+    ylabel='Actual stems ha⁻¹',
     save_path='/content/drive/My Drive/EucVision/Figures/Stems_per_ha_4_Key_Dates.png'
 )
 
@@ -3129,7 +3210,6 @@ df_master['Date'] = pd.to_datetime(df_master['Date'], errors='coerce')
 # MASKING & FILTERING
 borrowed_dates = pd.to_datetime(['2025-11-14', '2026-03-16', '2026-04-08', '2026-04-13', '2026-04-29'])
 df_master.loc[df_master['Date'].isin(borrowed_dates), 'Crown_Area_m2'] = np.nan
-df_master = df_master[(df_master['Date'] >= global_start_date) & (df_master['Date'] <= global_end_date)]
 
 if 'Culture' in df_master.columns:
     df_master = df_master[df_master['Culture'] == 'Single']
@@ -3165,7 +3245,6 @@ df_gems = pd.concat([df_gems_march, df_gems_new], ignore_index=True)
 df_gems['Datetime'] = pd.to_datetime(df_gems['Datetime'], errors='coerce')
 df_gems = df_gems.dropna(subset=['Datetime'])
 
-df_gems = df_gems[(df_gems['Datetime'] >= global_start_date) & (df_gems['Datetime'] <= global_end_date)].copy()
 df_gems['DateOnly'] = df_gems['Datetime'].dt.floor('D')
 
 # Clean numerical columns
@@ -3233,7 +3312,7 @@ custom_colors = ['#118AB2', '#EF476F', '#FFD166', '#06D6A0', '#073B4C', '#9D4EDD
 spacing_colors = {sp: custom_colors[i % len(custom_colors)] for i, sp in enumerate(spacings_asc)}
 
 axs[0].set_ylim(bottom = -0.04, top=0.18)
-axs[1].set_ylim(bottom = 0, top=0.15)
+axs[1].set_ylim(bottom = 0, top=0.10)
 
 # =====================================================================
 # 3. PANELS: Growth, Solar Radiation, & Soil Moisture
@@ -3242,8 +3321,8 @@ axs[1].set_ylim(bottom = 0, top=0.15)
 # --- Panel 1 (0): Crown Area ---
 # --- Panel 2 (1): Height ---
 metrics = [
-    {'col': 'Crown_Area_m2', 'ylabel': 'Mean crown\n growth rate\n per tree (m²/week)', 'ax': axs[0]},
-    {'col': 'Calibrated_Height_m', 'ylabel': 'Mean calibrated height\n growth rate\n per tree (m/week)', 'ax': axs[1]}
+    {'col': 'Crown_Area_m2', 'ylabel': 'Mean crown area\n growth rate\n per tree (m² week⁻¹)', 'ax': axs[0]},
+    {'col': 'Calibrated_Height_m', 'ylabel': 'Mean calibrated height\n growth rate\n per tree (m week⁻¹)', 'ax': axs[1]}
 ]
 
 for metric_info in metrics:
@@ -3266,7 +3345,7 @@ for metric_info in metrics:
         if not spacing_data.empty:
             label = f"{int(spacing_val)}x{int(spacing_val)}m"
             color = spacing_colors.get(int(spacing_val), '#808080')
-            x_out, deriv_sp = apply_gam_derivative(spacing_data, 'Dominant_Metric', n_splines=10)
+            x_out, deriv_sp = apply_gam_derivative(spacing_data, 'Dominant_Metric', n_splines=15)
             ax.plot(x_out, deriv_sp, color=color, linewidth=1.2, label=label, alpha=0.9)
 
     ax.set_ylabel(metric_info['ylabel'])
@@ -3279,10 +3358,10 @@ if not weekly_rad.empty and 'Weekly_Solar_Rad' in weekly_rad.columns:
     axs[2].plot(weekly_rad['Plot_Date'], weekly_rad['Weekly_Solar_Rad'], color='#d35400', linewidth=1.0, zorder=3, label='Weekly cumulative solar energy')
     axs[2].fill_between(weekly_rad['Plot_Date'], 0, weekly_rad['Weekly_Solar_Rad'], color='#d35400', alpha=0.2, zorder=2)
 
-axs[2].set_ylabel('Weekly cumulative\nsolar energy (MJ/m²)')
+axs[2].set_ylabel('Weekly cumulative\nsolar radiation (MJ m⁻²)')
 
-solar_patch = mpatches.Patch(color='#d35400', label='Weekly cumulative solar energy')
-moisture_patch = mpatches.Patch(color='lightgray', alpha=0.4, label='Mediterranean Summer Drought')
+solar_patch = mpatches.Patch(color='#d35400', label='Weekly cumulative solar radiation')
+moisture_patch = mpatches.Patch(color='lightgray', alpha=0.4, label='Mediterranean summer drought')
 apr_patch = mpatches.Patch(color='orange', alpha=0.3, label="April'26 Storm")
 may_patch = mpatches.Patch(color='red', alpha=0.2, label="May'26 Storm")
 
@@ -3319,16 +3398,21 @@ for ax in axs:
     ax.axvspan(date_may - pd.Timedelta(days=5), date_may + pd.Timedelta(days=2), color='red', alpha=0.2, zorder=2)
 
 # Y-Axis Limits & Synchronization (UPDATED TO WEEKLY CUMULATIVE ENERGY)
-if not weekly_rad.empty and 'Weekly_Solar_Rad' in weekly_rad.columns:
-    axs[2].set_ylim(0, weekly_rad['Weekly_Solar_Rad'].max() * 1.35)
-axs[3].set_ylim(0)
+window_mask_rad = (weekly_rad['Plot_Date'] >= global_start_date) & (weekly_rad['Plot_Date'] <= global_end_date)
+if window_mask_rad.any():
+    axs[2].set_ylim(0, weekly_rad.loc[window_mask_rad, 'Weekly_Solar_Rad'].max() * 1.35)
+
+window_mask_vwc = (daily_gems['DateOnly'] >= global_start_date) & (daily_gems['DateOnly'] <= global_end_date)
+if window_mask_vwc.any():
+    axs[3].set_ylim(0, daily_gems.loc[window_mask_vwc, 'soil_vwc_north_max'].max() * 1.05)
+else:
+    axs[3].set_ylim(bottom=0)
 
 # X-Axis Formatting for the bottom panel
-max_date = max(df_weather['Date'].max(), df_master['Date'].max())
 axs[3].xaxis.set_major_locator(mdates.MonthLocator(interval=1))
 axs[3].xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
 axs[3].tick_params(axis='x', rotation=45)
-axs[3].set_xlim(global_start_date, max_date)
+axs[3].set_xlim(global_start_date, global_end_date)
 
 add_panel_labels([axs[0],axs[1],axs[2],axs[3]], 4)
 
@@ -3348,7 +3432,7 @@ from pygam import LinearGAM, s
 # 1. LOAD & CLEAN DATA
 # ==============================================================================
 # Define strict start date (Bypasses the winter data gap)
-start_date = pd.to_datetime('2025-10-31')
+start_date = pd.to_datetime('2025-09-01')
 
 # --- Drone Data ---
 file_path_df_master = '/content/drive/My Drive/EucVision/UAV_Master_Dataset_26-06-2026.csv'
@@ -3391,7 +3475,7 @@ def filter_dominant_by_height(df_source, height_col='Calibrated_Height_m'):
 # ==============================================================================
 # 3. HELPER: GAM Derivative
 # ==============================================================================
-def safe_gam_derivative(dates_series, values_series, n_splines):
+def safe_gam_derivative(dates_series, values_series, n_splines, display_end_date=None):
     """
     Fits a GAM to raw individual data and calculates the WEEKLY growth rate.
     Strictly uses the user-defined n_splines with no automatic capping.
@@ -3399,12 +3483,10 @@ def safe_gam_derivative(dates_series, values_series, n_splines):
     x_num = mdates.date2num(pd.to_datetime(dates_series).values)
     y = values_series.values
 
-    # Basic check just to prevent total matrix collapse on empty plots
     if len(np.unique(x_num)) > 3:
         X = x_num.reshape(-1, 1)
 
         try:
-            # 100% manual spline control
             gam = LinearGAM(s(0, n_splines=n_splines)).fit(X, y)
 
             x_smooth = np.linspace(x_num.min(), x_num.max(), 100)
@@ -3412,6 +3494,13 @@ def safe_gam_derivative(dates_series, values_series, n_splines):
 
             daily_derivative = np.gradient(y_pred, x_smooth)
             weekly_derivative = daily_derivative * 7
+
+            # Trim the display window only — fit above already used the full data range
+            if display_end_date is not None:
+                end_num = mdates.date2num(display_end_date)
+                keep = x_smooth <= end_num
+                x_smooth = x_smooth[keep]
+                weekly_derivative = weekly_derivative[keep]
 
             return mdates.num2date(x_smooth), weekly_derivative
         except Exception:
@@ -3462,7 +3551,11 @@ def plot_growth_2x4(df_source,
                 z_order = 3 if species == 'Mixed' else 2
 
                 # Passing your manually tuned spline count directly to the fitter
-                x_out, y_out = safe_gam_derivative(sp_data['Date'], sp_data[metric_col], n_splines=user_spline_count)
+                x_out, y_out = safe_gam_derivative(
+                      sp_data['Date'], sp_data[metric_col],
+                      n_splines=user_spline_count,
+                      display_end_date=DISPLAY_END_DATE
+                  )
 
                 ax.plot(x_out, y_out, color=color, linewidth=1.5, linestyle='-',
                         label=species, zorder=z_order)
@@ -3482,6 +3575,7 @@ def plot_growth_2x4(df_source,
             ax.margins(y=0.20)
 
             if row_idx == 1:
+                ax.set_ylim(bottom=0)
                 ax.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
                 ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
                 ax.tick_params(axis='x', rotation=45, labelbottom=True)
@@ -3514,16 +3608,19 @@ def plot_growth_2x4(df_source,
 # ==============================================================================
 
 # ⬇️⬇️⬇️ TUNE YOUR SPLINES HERE ⬇️⬇️⬇️
-MANUAL_SPLINE_COUNT = 7
+MANUAL_SPLINE_COUNT = 8
+
+# ⬇️⬇️⬇️ TUNE YOUR DISPLAY WINDOW HERE ⬇️⬇️⬇️
+DISPLAY_END_DATE = pd.to_datetime('2026-05-31')
 
 plot_growth_2x4(
     df_source=df_master,
     top_metric_col='Crown_Area_m2',
     top_metric_name='Crown Area',
-    top_ylabel='Mean area\n growth rate\n per tree (m²/week)',
+    top_ylabel='Mean crown area\n growth rate\n per tree (m² week⁻¹)',
     bot_metric_col='Calibrated_Height_m',
     bot_metric_name='Tree Height',
-    bot_ylabel='Mean calibrated height\n growth rate\n per tree (m/week)',
+    bot_ylabel='Mean calibrated height\n growth rate\n per tree (m week⁻¹)',
     csv_prefix='velocity_crown_height',
     user_spline_count=MANUAL_SPLINE_COUNT  # Feeds straight into the plotter
 )
@@ -3746,7 +3843,7 @@ warnings.filterwarnings('ignore')
 # Assuming 'df', 'species_colors', 'legend_order', and 'MW' are already loaded/defined
 
 # ---------------------------------------------------------
-# 0. DERIVE SCALED SIZES FROM RCPARAMS (no hardcoding)
+# DERIVE SCALED SIZES FROM RCPARAMS (no hardcoding)
 # ---------------------------------------------------------
 _base   = mpl.rcParams['font.size']         # e.g. 9 pt
 _title  = mpl.rcParams['axes.titlesize']    # e.g. 10 pt
@@ -3757,6 +3854,16 @@ _legtit = mpl.rcParams['legend.title_fontsize']  # e.g. 10 pt
 
 # Scale factor relative to the original 16 cm / FW figure
 _sf = MW / 6.30  # ≈ 1.19 — used to scale non-font visual elements
+
+# ---------------------------------------------------------
+# 0. DATE WINDOW FOR PCA INPUT
+# ---------------------------------------------------------
+# pca_start_date = pd.to_datetime('2025-10-01')
+# pca_end_date   = pd.to_datetime('2026-05-31')
+# df_pca = df[(df['Date'] >= pca_start_date) & (df['Date'] <= pca_end_date)].copy()
+
+EXCLUDE_DATES = pd.to_datetime(['2025-02-25', '2026-03-02'])
+df_pca = df[~df['Date'].isin(EXCLUDE_DATES)].copy()
 
 # ---------------------------------------------------------
 # 1. CONFIDENCE ELLIPSE HELPER
@@ -3793,7 +3900,7 @@ def confidence_ellipse(x, y, ax, n_std=2.0, facecolor='none', **kwargs):
 REQUIRE_COMPLETE_COVERAGE = True
 
 def build_pivot(value_col):
-    pivot = df.pivot_table(index='Tree_ID', columns='Date', values=value_col)
+    pivot = df_pca.pivot_table(index='Tree_ID', columns='Date', values=value_col)
     n_total = len(pivot)
     if REQUIRE_COMPLETE_COVERAGE:
         pivot = pivot.dropna(axis=0, how='any')
@@ -3858,7 +3965,7 @@ if height_vec_pre[1] < 0:
     pca_combined.components_[1, :]       = pca_combined.components_[1, :] * -1
 
 # --- Join Metadata ---
-metadata        = df[['Tree_ID', 'Species', 'Spacing']].drop_duplicates().set_index('Tree_ID')
+metadata = df[['Tree_ID', 'Species', 'Spacing']].drop_duplicates().set_index('Tree_ID')
 pca_df_crown    = pca_df_crown.join(metadata)
 pca_df_height   = pca_df_height.join(metadata)
 pca_df_combined = pca_df_combined.join(metadata)
@@ -3874,17 +3981,17 @@ fig.suptitle(
 axes = axes.flatten()
 
 plot_configs = [
-    {'df': pca_df_crown,    'pca_model': pca_crown,    'col': 'Species', 'title': 'Crown area by species'},
-    {'df': pca_df_crown,    'pca_model': pca_crown,    'col': 'Spacing', 'title': 'Crown area by spacing'},
-    {'df': pca_df_height,   'pca_model': pca_height,   'col': 'Species', 'title': 'Calibrated height by species'},
-    {'df': pca_df_height,   'pca_model': pca_height,   'col': 'Spacing', 'title': 'Calibrated height by spacing'},
-    {'df': pca_df_combined, 'pca_model': pca_combined, 'col': 'Species', 'title': 'Crown area and calibrated height by species'},
-    {'df': pca_df_combined, 'pca_model': pca_combined, 'col': 'Spacing', 'title': 'Crown area and calibrated height by spacing'},
+    {'df_pca': pca_df_crown,    'pca_model': pca_crown,    'col': 'Species', 'title': 'Crown area by species'},
+    {'df_pca': pca_df_crown,    'pca_model': pca_crown,    'col': 'Spacing', 'title': 'Crown area by spacing'},
+    {'df_pca': pca_df_height,   'pca_model': pca_height,   'col': 'Species', 'title': 'Calibrated height by species'},
+    {'df_pca': pca_df_height,   'pca_model': pca_height,   'col': 'Spacing', 'title': 'Calibrated height by spacing'},
+    {'df_pca': pca_df_combined, 'pca_model': pca_combined, 'col': 'Species', 'title': 'Crown area and calibrated height by species'},
+    {'df_pca': pca_df_combined, 'pca_model': pca_combined, 'col': 'Spacing', 'title': 'Crown area and calibrated height by spacing'},
 ]
 
 for i, config in enumerate(plot_configs):
     ax       = axes[i]
-    plot_df  = config['df'].dropna(subset=[config['col']]).copy()
+    plot_df  = config['df_pca'].dropna(subset=[config['col']]).copy()
     pca_model = config['pca_model']
     col       = config['col']
 
@@ -3897,9 +4004,8 @@ for i, config in enumerate(plot_configs):
         palette   = species_colors
         hue_order = legend_order
     else:  # Spacing
-        pal_colors = sns.color_palette("viridis", n_colors=len(unique_vals))
-        palette    = dict(zip(unique_vals, pal_colors))
-        hue_order  = unique_vals
+        palette   = {label: spacing_colors.get(int(label.split('x')[0]), '#808080') for label in unique_vals}
+        hue_order = unique_vals
 
     show_legend = i < 2   # only panels (a) and (b)
 
