@@ -133,7 +133,7 @@ if (file.exists(path_trees)) {
 
 # 4.1 Plot Base Cropped Point Cloud
 if (!is.null(las)) {
-  plot(las, size = 4, bg = "white")
+  plot(las, size = 1, color = "RGB", bg = "white")
 }
 
 # 4.2 Plot Ground Classified Points & Digital Terrain Model (DTM)
@@ -212,16 +212,16 @@ if (!is.null(las_chm) && !is.null(las_normalised)) {
 # 6. Optional: 3D Animation Export ####
 # ──────────────────────────────────────────────────────────────────────────────
 
-# # --- Define spin motion ---
-# spin <- spin3d(axis = c(0, 0, 1), rpm = 6)
-# 
-# # --- Save the animation ---
-# movie3d(
-#   movie = "Tree_Tops_animation",   # Base filename for output
-#   dir = getwd(),                   # Output directory
-#   spin,                            # The animation function defined above
-#   duration = 10,                   # Animation length in seconds
-#   fps = 25,                        # Frames per second
-#   clean = TRUE,                    # Remove individual frame images after compiling
-#   type = "gif"                     # Export format
-# )
+# --- Define spin motion ---
+spin <- spin3d(axis = c(0, 0, 1), rpm = 6)
+
+# --- Save the animation ---
+movie3d(
+  movie = "Tree_Tops_animation",   # Base filename for output
+  dir = getwd(),                   # Output directory
+  spin,                            # The animation function defined above
+  duration = 10,                   # Animation length in seconds
+  fps = 25,                        # Frames per second
+  clean = TRUE,                    # Remove individual frame images after compiling
+  type = "gif"                     # Export format
+)

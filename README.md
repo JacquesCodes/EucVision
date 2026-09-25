@@ -12,11 +12,11 @@ Jacques Vermeulen · Department of Forestry and Wood Science, Stellenbosch Unive
 
 Trial site: IMPACT OAL, near Stellenbosch, South Africa ([eucxylo.sun.ac.za](https://eucxylo.sun.ac.za)).
 
-Five *Eucalyptus* species and clones are monitored — *E. grandis*, an *E. grandis* clone, *E. urophylla*, *E. cloeziana* and *E. cladocalyx* — across four planting spacings (1×1 m, 2×2 m, 3×3 m, 5×5 m) with three plot replicates each, plus mixed-species plots. The study tracks 3 402 planted trees across 69 plots. Repeated DJI Matrice 3D flights from a DJI Dock 2 provide the imagery and point clouds underlying the analysis.
+Five *Eucalyptus* species and clones are monitored — *E. grandis* seedling, an *E. grandis* clone, *E. urophylla*, *E. cloeziana* and *E. cladocalyx* — across four planting spacings (1×1 m, 2×2 m, 3×3 m, 5×5 m) with three plot replicates each, plus mixed-species plots. The study tracks 3 144 planted trees across 69 plots. Repeated DJI Matrice 3D flights from a DJI Dock 2 provide the imagery and point clouds underlying the analysis.
 
 ## Methods summary
 
-**Acquisition.** Near-weekly BVLOS flights, 31 October 2025 to 25 May 2026 — 94 individual flights across 25 flight dates, extended backwards by two ad hoc flights (February 2025, September 2025). From 23 March 2026 each date flies two concurrent configurations: a sub-1 cm GSD pass at 25 m AGL for orthomosaics, and a validated 3 cm GSD cross-hatch pass at 111 m AGL for height extraction. Six ground control points, three per compartment. Imagery is processed to point clouds, DSMs and orthomosaics in Pix4Dmapper by Integrated Aerial Systems.
+**Acquisition.** Near-weekly BVLOS flights, 31 October 2025 to 25 May 2026 — 92 individual flights across 25 flight dates, extended backwards by two ad hoc flights (February 2025, September 2025). From 23 March 2026 each date flies two concurrent configurations: a sub-1 cm GSD pass at 25 m AGL for orthomosaics, and a 3 cm GSD cross-hatch pass at 111 m AGL for height extraction. Six ground control points, three per compartment. Imagery is processed to point clouds, DSMs and orthomosaics in Pix4Dmapper by Integrated Aerial Systems.
 
 **Processing (`R/`).** Crowns are delineated per plot in QGIS, then merged and validated in R. A baseline terrain model is fused from three flights with good ground visibility and reused throughout; per-flight point clouds are normalised against it, converted to canopy height models, and the maximum height inside each crown polygon is extracted. Everything is compiled into one longitudinal dataset covering every tree on every date, with mortality carried explicitly rather than as missing rows.
 
@@ -34,7 +34,7 @@ The handover point between the two is the master longitudinal dataset: R produce
 
 ## Data availability
 
-Imagery and derived datasets are archived at the Information Hub, a Google Cloud Platform store maintained with the University of Pretoria, under the project *IMPACT regular drone-in-a-box imagery and derived datasets* (Vermeulen, 2026a).
+Imagery and derived datasets are archived at the Information Hub, a Google Cloud Platform store maintained with the University of Pretoria, under the project *IMPACT regular drone-in-a-box imagery and derived datasets*.
 
 The scripts here reference absolute local paths and will not run unmodified elsewhere. They are published for transparency and method review rather than as a turnkey pipeline.
 

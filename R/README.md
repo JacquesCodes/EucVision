@@ -15,9 +15,9 @@ Scripts are named by domain rather than numbered, so an alphabetical listing gro
 
 ## Pipeline overview
 
-![Section 2.5 processing workflow](Diagrams/section_2_5_figure.png)
+![Data processing workflow](Diagrams/data_processing.png)
 
-*The diagram above corresponds to Section 2.5 of the thesis. Editable source: `Diagrams/section_2_5_figure.drawio`.*
+*The diagram above corresponds to Data processing workflow of the thesis. Editable source: `Diagrams/data_processing`.*
 
 ---
 
@@ -52,11 +52,11 @@ Run for each new flight date.
 
 ### Alternative extraction methods
 
-These sit outside the main sequence. Each produces heights by a different route, and the comparison between them is what Table 3.2 reports.
+These sit outside the main sequence. Each produces heights by a different route, and the comparison between them is what Table 3.3 reports.
 
 | Script | Purpose |
 |---|---|
-| `chm_from_dsm_dtm.R` | **Comparison arm for Table 3.2.** Mosaics masked Pix4D DSMs and subtracts the baseline DTM by raster maths, instead of normalising the point cloud. Self-contained: it repeats the aggregation, field-data join and outlier filtering internally so the whole comparison runs as one batch, and writes its own parallel master dataset. |
+| `chm_from_dsm_dtm.R` | **Comparison arm for Table 3.3.** Mosaics masked Pix4D DSMs and subtracts the baseline DTM by raster maths, instead of normalising the point cloud. Self-contained: it repeats the aggregation, field-data join and outlier filtering internally so the whole comparison runs as one batch, and writes its own parallel master dataset. |
 | `chm_pipeline_dtm_independent.R` | **TLS and ALS processing.** Classifies ground and builds a DTM from each dataset's own point cloud rather than using the site baseline, then normalises, generates CHMs and extracts heights. This is how the TLS and ALS reference heights are produced. |
 | `chm_height_extraction.R` | Standalone re-extraction of per-crown heights from existing CHMs, without regenerating the point clouds. Useful when only the crown polygons have changed. |
 
@@ -110,7 +110,7 @@ Developed on 32 GB RAM with `plan(multisession, workers = 6)`. Lower the worker 
 ## Notes and limitations
 
 - **Paths are absolute and machine-specific.** Every script hard-codes `E:/Remote Sensing Media` or a OneDrive path. Running elsewhere means editing the configuration block at the top of each file.
-- **Two master datasets exist by design.** `master_dataset_compiler.R` writes the primary `01. Master Dataset.csv` from the `sfm_pipeline.R` outputs; `chm_from_dsm_dtm.R` writes a separate `Master Dataset_RasterMath.csv` for the Table 3.2 comparison. They are not interchangeable, and the shared join and filtering logic is duplicated deliberately so each runs standalone.
+- **Two master datasets exist by design.** `master_dataset_compiler.R` writes the primary `01. Master Dataset.csv` from the `sfm_pipeline.R` outputs; `chm_from_dsm_dtm.R` writes a separate `Master Dataset_RasterMath.csv` for the Table 3.3 comparison. They are not interchangeable, and the shared join and filtering logic is duplicated deliberately so each runs standalone.
 - **Two dated master exports exist.** `UAV_Master_Dataset_25-05-2026.csv` is the
   study-scope dataset — 25 May 2026 is the cutoff for the longitudinal analysis,
   and it is what `gamm_statistics.R` and all Part II results use.

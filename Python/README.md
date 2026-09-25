@@ -13,9 +13,9 @@ The R pipeline (`../R`) produces the master longitudinal dataset; this folder do
 
 ## Pipeline overview
 
-![Section 2.6 statistical analysis workflow](Diagrams/section_2_6_figure.png)
+![Section 4.2 statistical analysis workflow](Diagrams/statistical_analysis.png)
 
-*The diagram above corresponds to Section 2.6 of the thesis. Editable source: `Diagrams/section_2_6_figure.drawio`.*
+*The diagram above corresponds to Section 4.2 of the thesis. Editable source: `Diagrams/statistical_analysis`.*
 
 ---
 
@@ -23,7 +23,7 @@ The R pipeline (`../R`) produces the master longitudinal dataset; this folder do
 
 ### `statistical_analysis.ipynb`
 
-The main analysis notebook, written and run in Google Colab. It covers most of Section 2.6 and produces the majority of the Results figures. Organised as ~20 `@title` cells, each self-contained apart from a shared setup cell:
+The main analysis notebook, written and run in Google Colab. It produces the majority of the Results figures. Organised as ~20 `@title` cells, each self-contained apart from a shared setup cell:
 
 | Cell group | Contents |
 |---|---|
@@ -43,7 +43,7 @@ Both the `.ipynb` and an exported `.py` are kept. The notebook is the archival c
 
 ### `pix4d_report_extractor.py`
 
-Bulk-parses the Pix4Dmapper quality report PDFs — all 94 individual flights across 25 flight dates — into a single CSV. Extracts camera model, area covered, GSD, calibrated-image counts, median keypoints and matches, mean reprojection error, densified point counts and density, GCP RMS error, and per-stage processing times.
+Bulk-parses the Pix4Dmapper quality report PDFs — all 92 individual flights across 25 flight dates — into a single CSV. Extracts camera model, area covered, GSD, calibrated-image counts, median keypoints and matches, mean reprojection error, densified point counts and density, GCP RMS error, and per-stage processing times.
 
 The regular expressions are tuned to Pix4Dmapper 4.10.1 report layout, including a workaround for `pypdf` splitting superscript glyphs (`km²` extracting as `km` + newline + `2`). A new Pix4D version may need them revisited.
 
