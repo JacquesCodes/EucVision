@@ -35,10 +35,17 @@ target_date_override <- "40. 12 August 2026 Terra"
 # Folders to ignore during the batch processing loop
 exclude_list <- c("000. Projects",
                   "00. Baseline DTM",
-                  "00. Dataset Template",
-                  "01. 25 February 2025", 
-                  "17. 03 March 2026 (Multispectral)",
-                  "20. 24 March 2026 (Multispectral)")
+                  "00. Dataset Template", 
+                  "07. December 2025 (TLS)",
+                  "17. 02 March 2026 2.4",
+                  "17. 02 March 2026 4.8",
+                  "17. 02 March 2026 19.2",
+                  "17. 02 March 2026 Double Grid",
+                  "20. 23 March 2026 0.6cm",
+                  "31. 26 June 2026 Oblique",
+                  "31. 30 June 2026 (ALS)",
+                  "40. 12 August 2026",
+                  "40. 12 August 2026 Terra")
 
 # Scan the base directory and filter for valid date folders
 folders <- list.dirs(base_dir, recursive = FALSE)

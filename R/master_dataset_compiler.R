@@ -5,14 +5,16 @@
 # Project: EucXylo (https://eucxylo.sun.ac.za/)
 # ──────────────────────────────────────────────────────────────────────────────
 # Description: Automates the extraction, consolidation, and spatial alignment of 
-#              temporal crown metrics across all UAV flight datasets. It seamlessly 
-#              joins drone-derived data with ground-truth field measurements and 
-#              dynamically pads the dataset using a static master baseline template. 
-#              This ensures all dead and unmeasured trees are explicitly tracked 
-#              across time with properly aligned NA values and mortality dates. 
-#              Finally, the pipeline applies statistical outlier filtering to remove 
-#              anomalous height spikes and exports a clean, chronologically sorted 
-#              Master Dataset for downstream longitudinal analysis.
+#              temporal crown metrics across all UAV flight datasets. The script 
+#              processes shapefile geometries to calculate polygon rectangularity, 
+#              seamlessly joins drone-derived data with ground-truth field 
+#              measurements, and dynamically pads the dataset using a static 
+#              master baseline template. This ensures all dead and unmeasured 
+#              trees are explicitly tracked across time with properly aligned 
+#              NA values and mortality dates. Finally, the pipeline applies 
+#              statistical outlier filtering to remove anomalous height spikes 
+#              and exports a clean, chronologically sorted Master Dataset for 
+#              downstream longitudinal analysis.
 # ──────────────────────────────────────────────────────────────────────────────
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -21,6 +23,7 @@
 library(dplyr)
 library(readr)
 library(stringr)
+library(sf) # Added for shapefile handling and geometric calculations
 
 Sys.setlocale("LC_TIME", "C")
 
@@ -59,7 +62,9 @@ exclude_list <- c("000. Projects",
                   "17. 02 March 2026 Double Grid",
                   "20. 23 March 2026 0.6cm",
                   "31. 26 June 2026 Oblique",
-                  "31. 30 June 2026 (ALS)")
+                  "31. 30 June 2026 (ALS)",
+                  "40. 12 August 2026",
+                  "40. 12 August 2026 Terra")
 
 # Scan the base directory and filter for valid date folders
 folders <- list.dirs(src_base_dir, recursive = FALSE)
@@ -93,11 +98,44 @@ for (folder in main_folders) {
       file.copy(from = files_to_copy, to = current_dest_dir, overwrite = TRUE)
       
       csv_file <- files_to_copy[grepl("\\.csv$", files_to_copy, ignore.case = TRUE)]
+      shp_file <- files_to_copy[grepl("\\.shp$", files_to_copy, ignore.case = TRUE)]
       
       if (length(csv_file) == 1) {
         # Load drone data and ensure Tree column matches template precision
         temp_df <- read_csv(csv_file, show_col_types = FALSE) %>%
           mutate(Tree = round(as.numeric(Tree), 2))
+        
+        # --- NEW: Calculate Shape Indices from Shapefile ---
+        if (length(shp_file) == 1) {
+          polygons <- sf::st_read(shp_file, quiet = TRUE)
+          
+          # Calculate Area, Rectangularity (Extent), and Solidity
+          polygons <- polygons %>%
+            mutate(
+              calc_area = as.numeric(sf::st_area(geometry)),
+              
+              # Rectangularity: Area / Area of Minimum Rotated Rectangle
+              mbr_area = as.numeric(sf::st_area(sf::st_minimum_rotated_rectangle(geometry))),
+              Rectangularity = calc_area / mbr_area,
+              
+              # Solidity: Area / Area of Convex Hull
+              hull_area = as.numeric(sf::st_area(sf::st_convex_hull(geometry))),
+              Solidity = calc_area / hull_area,
+              
+              Tree = round(as.numeric(Tree), 2)
+            ) %>%
+            sf::st_drop_geometry()
+          
+          # Match available join keys between the shapefile and the CSV
+          join_keys <- intersect(names(polygons), c("Compartment", "Line", "Plot", "Culture", "Spacing", "Species", "Tree"))
+          
+          # Merge shape metrics into temp_df
+          temp_df <- temp_df %>% 
+            left_join(select(polygons, all_of(join_keys), Rectangularity, Solidity), by = join_keys)
+        } else {
+          temp_df$Rectangularity <- NA
+          temp_df$Solidity <- NA
+        }
         
         # Clean Columns
         if ("Cmprtmn" %in% names(temp_df)) temp_df <- rename(temp_df, Compartment = Cmprtmn)
@@ -110,8 +148,9 @@ for (folder in main_folders) {
           temp_df <- mutate(temp_df, Crown_Area = coalesce(Area_m2, Area))
         }
         
+        # Include Circularity in the retained columns list
         cols_to_keep <- c("Compartment", "Line", "Plot", "Culture", "Spacing", 
-                          "Species", "Tree", "Crown_Area", "Tree_Height")
+                          "Species", "Tree", "Crown_Area", "Tree_Height", "Rectangularity","Solidity")
         temp_df <- select(temp_df, any_of(cols_to_keep))
         
         # INJECT DEAD TREES: Left join the master template with the drone data
@@ -208,7 +247,9 @@ if (length(csv_list) > 0) {
         Tree_Height = as.numeric(Tree_Height),
         Ground_Truth_Height = as.numeric(Ground_Truth_Height),
         Crown_Area = as.numeric(Crown_Area),
-        Stem_Diameter = as.numeric(Stem_Diameter)
+        Stem_Diameter = as.numeric(Stem_Diameter),
+        Rectangularity = as.numeric(Rectangularity), # Added to enforce clean numeric format
+        Solidity = as.numeric(Solidity)
       )
   )
   

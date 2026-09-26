@@ -38,7 +38,7 @@ library(rgl)
 date_folder <- "40. 12 August 2026"
 
 # Define the specific plot number to visualize
-Number <- "28"
+Number <- "2"
 
 # Extract the date part and create a safe filename format
 # (e.g., "17. 02 March 2026" -> "02_March_2026")
@@ -173,6 +173,7 @@ if (!is.null(las_chm)) {
 MinimumTreeHeight <- 0.5
 
 # Initialize the Local Maximum Filter (LMF) algorithm for treetops
+# Note: ws = 3 (window size) controls how far apart trees need to be. 
 lmf_algorithm <- lmf(ws = 3, hmin = MinimumTreeHeight, shape = "circular")
 
 # Execute ITD and Segmentation if the required spatial data is available
@@ -180,6 +181,26 @@ if (!is.null(las_chm) && !is.null(las_normalised)) {
   
   # --- 1. Locate Individual Treetops (ITD) ---
   ttops <- locate_trees(las = las_chm, algorithm = lmf_algorithm)
+  
+  # --- NEW: CALCULATE TREE DETECTION RATE ---
+  if (!is.null(PlotTrees) && nrow(PlotTrees) > 0) {
+    # Filter the automated treetops to only include those that fall inside the reference polygons
+    # This prevents overcounting trees if your CHM has a buffer around the plot edges
+    ttops_in_plot <- sf::st_filter(ttops, sf::st_union(PlotTrees))
+    
+    actual_tree_count <- nrow(PlotTrees)
+    automated_tree_count <- nrow(ttops_in_plot)
+    detection_rate <- (automated_tree_count / actual_tree_count) * 100
+    
+    # Print the results neatly to the console
+    message("\n======================================================")
+    message(" ITD PERFORMANCE SUMMARY FOR PLOT ", Number)
+    message("======================================================")
+    message(" Actual Living Trees (Geo-SAM Reference) : ", actual_tree_count)
+    message(" Automated Detected Trees (LMF)          : ", automated_tree_count)
+    message(" Tree Detection Rate                     : ", round(detection_rate, 2), "%\n")
+    message("======================================================\n")
+  }
   
   # --- 2. Segment the 3D Point Cloud (ITS) ---
   algo_dalponte <- dalponte2016(chm = las_chm, treetops = ttops)
@@ -191,8 +212,15 @@ if (!is.null(las_chm) && !is.null(las_normalised)) {
   
   # --- 4. Visualizations ---
   # Visualization A: 2D CHM with Treetops and Delineated Crowns
-  plot(las_chm, col = height.colors(50), main = "CHM with Treetops & Crown Boundaries")
-  plot(sf::st_geometry(ttops), add = TRUE, pch = 3, col = "black")
+  plot(las_chm, col = height.colors(50), main = paste("CHM ITD Results - Plot", Number))
+  
+  # Plot the filtered treetops inside the plot so you can visually verify the count
+  if (exists("ttops_in_plot")) {
+    plot(sf::st_geometry(ttops_in_plot), add = TRUE, pch = 3, col = "black", lwd = 2)
+  } else {
+    plot(sf::st_geometry(ttops), add = TRUE, pch = 3, col = "black")
+  }
+  
   if (!is.null(delineated_crowns)) {
     plot(sf::st_geometry(delineated_crowns), add = TRUE, border = "white", lwd = 2)
   }
@@ -208,20 +236,20 @@ if (!is.null(las_chm) && !is.null(las_normalised)) {
   message("Cannot perform ITD or Segmentation: Both CHM and Normalised point clouds are required.")
 }
 
-# ──────────────────────────────────────────────────────────────────────────────
-# 6. Optional: 3D Animation Export ####
-# ──────────────────────────────────────────────────────────────────────────────
-
-# --- Define spin motion ---
-spin <- spin3d(axis = c(0, 0, 1), rpm = 6)
-
-# --- Save the animation ---
-movie3d(
-  movie = "Tree_Tops_animation",   # Base filename for output
-  dir = getwd(),                   # Output directory
-  spin,                            # The animation function defined above
-  duration = 10,                   # Animation length in seconds
-  fps = 25,                        # Frames per second
-  clean = TRUE,                    # Remove individual frame images after compiling
-  type = "gif"                     # Export format
-)
+# # ──────────────────────────────────────────────────────────────────────────────
+# # 6. Optional: 3D Animation Export ####
+# # ──────────────────────────────────────────────────────────────────────────────
+# 
+# # --- Define spin motion ---
+# spin <- spin3d(axis = c(0, 0, 1), rpm = 6)
+# 
+# # --- Save the animation ---
+# movie3d(
+#   movie = "Tree_Tops_animation",   # Base filename for output
+#   dir = getwd(),                   # Output directory
+#   spin,                            # The animation function defined above
+#   duration = 10,                   # Animation length in seconds
+#   fps = 25,                        # Frames per second
+#   clean = TRUE,                    # Remove individual frame images after compiling
+#   type = "gif"                     # Export format
+# )
