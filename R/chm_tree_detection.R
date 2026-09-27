@@ -20,6 +20,7 @@ library(dplyr)         # Data wrangling and piping logic
 library(lidR)          # Individual Tree Detection algorithms
 library(tictoc)        # Script execution timing 
 library(stringr)       # String manipulation for dates
+library(tidyr)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 2. Configuration & Batch Management ####
@@ -27,7 +28,7 @@ library(stringr)       # String manipulation for dates
 base_dir <- "E:/Remote Sensing Media"
 
 # Final output CSV for the complete longitudinal analysis
-output_csv <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data Analysis/09. Tree detection.csv"
+output_csv <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data Analysis/09. Tree Detection.csv"
 
 # --- RUN CONTROLS ---
 target_date_override <- NULL 
@@ -193,9 +194,9 @@ for (folder_path in dataset_folders) {
   gc()
 }
 
-# ────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────────
 # 4. Export Final CSV ####
-# ────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────────
 if (length(all_results) > 0) {
   final_df <- bind_rows(all_results)
   
@@ -210,3 +211,64 @@ if (length(all_results) > 0) {
 } else {
   print("No data was extracted. Check folder paths.")
 }
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 4. Generate Summary Table ####
+# ──────────────────────────────────────────────────────────────────────────────
+
+# 1. Load your newly generated PiP results
+df_pip <- read.csv("C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.Sc. project - Documents/Processed Data/EucVision/01. Data Analysis/09. Tree detection.csv")
+
+# 2. Convert Date string to Date object to easily filter the first and last flights
+df_pip$Date <- as.Date(df_pip$Date, format="%d-%m-%Y")
+
+# Find your exact baseline and final dates
+baseline_date <- min(df_pip$Date, na.rm = TRUE)
+final_date <- max(df_pip$Date, na.rm = TRUE)
+
+# 3. Filter to just these two extremes and calculate percentages
+table_data <- df_pip %>%
+  filter(Date %in% c(baseline_date, final_date)) %>%
+  mutate(
+    Phase = ifelse(Date == baseline_date, "Baseline", "Final"),
+    Omission_Pct = (Missed_Trees / Actual_Trees) * 100,
+    Commission_Pct = (Over_Segmented_Trees / Actual_Trees) * 100
+  ) %>%
+  # 4. Group and summarize by Spacing and Phase
+  group_by(Spacing, Phase) %>%
+  summarise(
+    Mean_True_Detection = round(mean(True_Detection_Rate_Pct, na.rm = TRUE), 1),
+    Mean_Omission = round(mean(Omission_Pct, na.rm = TRUE), 1),
+    Mean_Commission = round(mean(Commission_Pct, na.rm = TRUE), 1),
+    .groups = "drop"
+  ) %>%
+  # Order the factors so Baseline appears above Final for each spacing
+  mutate(Phase = factor(Phase, levels = c("Baseline", "Final"))) %>%
+  arrange(Spacing, Phase)
+
+# Print the final clean table to the console
+print(table_data)
+
+# Optional: Export directly to a CSV to copy-paste into Word/Excel
+write.csv(table_data, "C:/Users/jakev/Desktop/ITD_Accuracy_Summary_Table.csv", row.names = FALSE)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
