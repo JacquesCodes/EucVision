@@ -35,7 +35,7 @@ output_csv <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.
 
 # --- RUN CONTROLS ---
 # Set this to your TLS or ALS folder name to run the validation on just that date
-target_date_override <- "20. 23 March 2026"
+target_date_override <- "07. December 2025 (TLS)"
 
 # Folders to ignore during the batch processing loop
 exclude_list <- c("000. Projects",
@@ -76,9 +76,15 @@ for (folder_path in dataset_folders) {
   date_folder <- basename(folder_path)
   file_date_safe <- gsub(" ", "_", sub("^\\d+\\.\\s*", "", date_folder))
   
-  # Extract true date format for the CSV
-  date_match <- str_extract(date_folder, "\\d{2} [A-Za-z]+ \\d{4}")
-  formatted_date <- format(as.Date(date_match, format="%d %B %Y"), "%d-%m-%Y")
+  # --- NEW: Safe Date Extraction for TLS ---
+  # Extract true date format for the CSV, intercepting the TLS folder to prevent NA errors
+  if (grepl("December 2025 \\(TLS\\)", date_folder)) {
+    formatted_date <- "28-11-2025" # Forces a valid date format for the summary table
+  } else {
+    date_match <- str_extract(date_folder, "\\d{2} [A-Za-z]+ \\d{4}")
+    formatted_date <- format(as.Date(date_match, format="%d %B %Y"), "%d-%m-%Y")
+  }
+  # -----------------------------------------
   
   print("================================================================")
   print(paste("RUNNING TREE DETECTION FOR:", date_folder))
@@ -91,15 +97,11 @@ for (folder_path in dataset_folders) {
   path_chm   <- file.path(chm_dir, paste0("Master_Site_CHM_Single_", file_date_safe, ".tif"))
   
   if (date_folder == "31. 30 June 2026 (ALS)"){
-    
     path_chm   <- file.path(chm_dir, paste0("A_Smoothed_Master_Site_CHM_Single_", file_date_safe, ".tif"))
-    
   }
   
   if (date_folder == "20. 23 March 2026"){
-    
     path_chm   <- file.path(chm_dir, paste0("A_Smoothed_Master_Site_CHM_Single_", file_date_safe, ".tif"))
-    
   }
   
   if (!file.exists(path_trees)) {
@@ -152,21 +154,24 @@ for (folder_path in dataset_folders) {
     # 2. Crop and Mask the Master CHM to the true angled plot boundary
     
     # Crop to the rectangular extent first (to reduce memory load)
-    plot_extent <- ext(plot_trees) + 3
+    plot_extent <- ext(plot_trees)
     chm_cropped <- crop(ctg_chm, plot_extent)
     
     # Create a tight, angled polygon (Convex Hull) wrapping this specific plot's trees
     plot_boundary_angled <- st_convex_hull(st_union(plot_trees))
     
     # Buffer the angled boundary by 2m so we don't slice off the outer edges of the border crowns
-    plot_boundary_buffered <- st_buffer(plot_boundary_angled, 2)
+    plot_boundary_buffered <- st_buffer(plot_boundary_angled, 1)
     
     # Mask the CHM: Everything outside your diagonal plot boundary becomes NA
     chm_cropped <- mask(chm_cropped, vect(plot_boundary_buffered))
     
     # 3. Dynamic Algorithm Configuration
+    
+    h_val <- 0.5
+  
     ws_val <- ifelse(is.na(spacing_val) || spacing_val <= 0, 3, spacing_val * 0.8)
-    lmf_dynamic <- lmf(ws = ws_val, hmin = 0.5, shape = "circular")
+    lmf_dynamic <- lmf(ws = ws_val, hmin = h_val, shape = "circular")
     
     ttops <- tryCatch({
       locate_trees(las = chm_cropped, algorithm = lmf_dynamic)
@@ -196,11 +201,11 @@ for (folder_path in dataset_folders) {
       
       # Mask out anything below 0.5m to stop ground-spill of the watershed algorithm
       chm_masked <- chm_cropped
-      chm_masked[chm_masked < 0.5] <- NA
+      chm_masked[chm_masked < h_val] <- NA
       
       # Draw algorithmic polygons
       tls_crowns_spat <- tryCatch({
-        mcws(treetops = ttops, CHM = chm_masked, minHeight = 0.5, format = "polygons")
+        mcws(treetops = ttops, CHM = chm_masked, minHeight = h_val, format = "polygons")
       }, error = function(e) { NULL })
       
       if (!is.null(tls_crowns_spat)) {
@@ -214,7 +219,7 @@ for (folder_path in dataset_folders) {
         plot_trees_valid$max_h <- height_extract[, 2]
         
         # Filter Geo-SAM polygons to only keep trees >= 1.0 meter
-        plot_trees_filtered <- plot_trees_valid %>% filter(max_h >= 1.0)
+        plot_trees_filtered <- plot_trees_valid %>% filter(max_h >= 1)
         # ----------------------------------
         
         # --- EXCLUDE EDGE-CLIPPED TREES ---
@@ -226,8 +231,10 @@ for (folder_path in dataset_folders) {
         valid_interior <- st_buffer(chm_footprint_sf, -0.5)
         
         # 3. Keep only Geo-SAM polygons completely inside the valid scan area
-        trees_within_extent <- st_contains(valid_interior, plot_trees_filtered, sparse = FALSE)
-        plot_trees_filtered <- plot_trees_filtered[trees_within_extent[1, ], ]
+        if (nrow(plot_trees_filtered) > 0) {
+          trees_within_extent <- st_contains(valid_interior, plot_trees_filtered, sparse = FALSE)
+          plot_trees_filtered <- plot_trees_filtered[trees_within_extent[1, ], ]
+        }
         # -----------------------------------
         
         # Only proceed if there are still trees left after filtering
@@ -255,7 +262,12 @@ for (folder_path in dataset_folders) {
             best_matches$iou <- as.numeric(best_matches$int_area / best_matches$union_area)
             
             # Calculate the mean IoU for this plot (now strictly for trees > 1m)
-            plot_mean_iou <- round(mean(best_matches$iou, na.rm = TRUE), 4)
+            iou_all <- plot_trees_filtered %>%
+              st_drop_geometry() %>%
+              select(uid) %>%
+              left_join(st_drop_geometry(best_matches) %>% select(uid, iou), by = "uid") %>%
+              mutate(iou = replace_na(iou, 0))
+            plot_mean_iou <- round(mean(iou_all$iou), 4)
           }
         }
         
@@ -273,7 +285,6 @@ for (folder_path in dataset_folders) {
         # Plot algorithmic TLS polygons in RED
         plot(st_geometry(tls_crowns), border = "red", lwd = 2, add = TRUE)
       }
-    
     }
     
     # 6. Save the plot's metrics
