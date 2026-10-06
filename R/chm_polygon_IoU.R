@@ -35,7 +35,7 @@ output_csv <- "C:/Users/jakev/Stellenbosch University/JacquesV B.Sc. skripsie M.
 
 # --- RUN CONTROLS ---
 # Set this to your TLS or ALS folder name to run the validation on just that date
-target_date_override <- "07. December 2025 (TLS)"
+target_date_override <- "31. 30 June 2026 (ALS)"
 
 # Folders to ignore during the batch processing loop
 exclude_list <- c("000. Projects",
@@ -196,7 +196,7 @@ for (folder_path in dataset_folders) {
     }
     
     # 5. NEW: Calculate Intersection over Union (IoU) for Trees > 1m
-    plot_mean_iou <- NA
+    plot_mean_iou <- NA; n_retained <- NA; n_matched <- NA
     if (!is.null(ttops) && nrow(ttops) > 0) {
       
       # Mask out anything below 0.5m to stop ground-spill of the watershed algorithm
@@ -236,6 +236,7 @@ for (folder_path in dataset_folders) {
           plot_trees_filtered <- plot_trees_filtered[trees_within_extent[1, ], ]
         }
         # -----------------------------------
+        n_retained <- nrow(plot_trees_filtered)
         
         # Only proceed if there are still trees left after filtering
         if (nrow(plot_trees_filtered) > 0) {
@@ -256,6 +257,8 @@ for (folder_path in dataset_folders) {
               group_by(uid) %>%
               slice_max(order_by = int_area, n = 1, with_ties = FALSE) %>%
               ungroup()
+            
+            n_matched <- nrow(best_matches)
             
             # Compute IoU: Area of Intersection / Area of Union
             best_matches$union_area <- best_matches$area_ref + best_matches$area_alg - best_matches$int_area
@@ -303,7 +306,9 @@ for (folder_path in dataset_folders) {
       Missed_Trees = missed_trees,
       Raw_Detection_Rate_Pct = round((total_detected_points / actual_count) * 100, 2),
       True_Detection_Rate_Pct = round((true_positives / actual_count) * 100, 2),
-      Mean_IoU = plot_mean_iou # <--- New column added here
+      Retained_Polygons = n_retained,
+      Matched_Polygons  = n_matched,
+      Mean_IoU = plot_mean_iou
     )
   }
   

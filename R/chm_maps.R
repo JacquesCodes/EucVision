@@ -37,7 +37,7 @@ save_smoothed_output <- TRUE  # Set to TRUE to export the smoothed CHM back to t
 
 # === CONFIGURE BATCH AND PLOT ===
 # Change this single variable for each new batch!
-date_folder <- "40. 12 August 2026"
+date_folder <- "31. 30 June 2026 (ALS)"
 
 # Define the specific plot number to visualize (Used if process_whole_site == FALSE)
 Number <- 28
@@ -106,8 +106,8 @@ if (file.exists(path_chm)) {
   
   # --- Smooth the CHM ---
   # Define the moving window 'w' (A 5x5 matrix is used here for smoothing)
-  w <- matrix(1, nrow = 5, ncol = 5) 
-  
+  w <- matrix(1, nrow = 3, ncol = 3)
+
   # Apply the focal smoothing function to the filtered CHM to remove micro-noise
   smoothed_chm <- terra::focal(las_chm, w = w, fun = max, na.rm = TRUE)
   message("Loaded and smoothed: ", name_chm, ".tif")
@@ -119,16 +119,45 @@ if (file.exists(path_chm)) {
     original_filename <- basename(path_chm)
     smoothed_filename <- paste0("A_Smoothed_", original_filename)
     out_path <- file.path(out_dir, smoothed_filename)
-    
+
     # Write raster to disk
     terra::writeRaster(smoothed_chm, filename = out_path, overwrite = TRUE)
     message("Successfully exported smoothed CHM to: ", out_path)
   }
+
+  # # 1. Convert all ground (0) pixels to NA
+  # las_chm[las_chm == 0] <- NA
+  # 
+  # # 2. Fill the holes using the na.policy = "only" constraint
+  # filled_chm <- terra::focal(las_chm, 
+  #                            w = matrix(1, 5, 5), 
+  #                            fun = mean, 
+  #                            na.policy = "only", 
+  #                            na.rm = TRUE)
+  # 
+  # # 3. Optional: Convert the true background (non-canopy areas) back to 0
+  # filled_chm[is.na(filled_chm)] <- 0
+  
+  # # --- Export Filled CHM ---
+  # if (save_smoothed_output) {
+  #   # Dynamically build output path in the same directory as the input
+  #   out_dir <- dirname(path_chm)
+  #   original_filename <- basename(path_chm)
+  #   filled_filename <- paste0("A_Filled_", original_filename)
+  #   out_path <- file.path(out_dir, filled_filename)
+  # 
+  #   # Write raster to disk
+  #   terra::writeRaster(filled_chm, filename = out_path, overwrite = TRUE)
+  #   message("Successfully exported filled CHM to: ", out_path)
+  # }
+  
+
   
 } else {
   message("Error: Could not find CHM file at specified path:\n", path_chm)
   las_chm <- NULL
-  smoothed_chm <- NULL 
+  smoothed_chm <- NULL
+  filled_chm <- NULL
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
