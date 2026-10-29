@@ -1244,7 +1244,7 @@ p_combined_3x2 <- (c_sp_3x2 | c_sc_3x2) /
   (h_sp_3x2   | h_sc_3x2)   /
   (r_sp_3x2   | r_sc_3x2)   +
   plot_annotation(
-    title = paste0("GAMM-fitted growth trajectories \u2014 ", POPULATION_LABEL),
+    title = paste0("GAMM-fitted growth trajectories"),
     subtitle = paste0("Left: Species comparisons (Simulated at ", BASELINE_SPACING, ")  |  Right: Spacing comparisons (Simulated for ", BASELINE_SPECIES, ")"),
     theme = theme(
       plot.title = element_text(size = 10, face = "bold", hjust = 0.5, margin = margin(b = 2)),
